@@ -1,6 +1,6 @@
 from setuptools import find_packages, setup
 
-package_name = 'pymove'
+package_name = 'drip_pan_environment'
 
 setup(
     name=package_name,
@@ -16,11 +16,11 @@ setup(
     maintainer='david-hill',
     maintainer_email='davidhil@andrew.cmu.edu',
     description='TODO: Package description',
-    license='Apache-2.0',
+    license='TODO: License declaration',
     tests_require=['pytest'],
     entry_points={
         'console_scripts': [
-            'scene_interface = pymove.scene_interface:main'
+            'load_environment = drip_pan_environment.load_environment:main'
         ],
     },
 )

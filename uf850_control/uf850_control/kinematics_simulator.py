@@ -68,9 +68,27 @@ def ik_uf850(target_position, rotation):
 
     R_diff = raw_rotation.T @ target_rotation
 
-    q[3] = np.arctan2(R_diff[1,2], R_diff[0,2])
-    q[4] = np.arctan2(np.sqrt(R_diff[1,2]**2 + R_diff[0,2]**2), R_diff[2,2])
-    q[5] = np.arctan2(R_diff[2,1], -R_diff[2,0])
+    if(abs(np.arctan2(R_diff[1,2], R_diff[0,2])) < abs(np.arctan2(-R_diff[1,2], -R_diff[0,2]))):
+        q[3] = np.arctan2(R_diff[1,2], R_diff[0,2])
+        q[4] = np.arctan2(np.sqrt(R_diff[1,2]**2 + R_diff[0,2]**2), R_diff[2,2])
+        q[5] = np.arctan2(R_diff[2,1], -R_diff[2,0])
+        # print("a")
+    else:
+        q[3] = np.arctan2(-R_diff[1,2], -R_diff[0,2])
+        q[4] = np.arctan2(-np.sqrt(R_diff[1,2]**2 + R_diff[0,2]**2), R_diff[2,2])
+        q[5] = np.arctan2(-R_diff[2,1], R_diff[2,0])
+        # print("b")
+
+    # if(abs(np.arctan2(R_diff[2,1], -R_diff[2,0])) < abs(np.arctan2(-R_diff[2,1], R_diff[2,0]))):
+    #     q[3] = np.arctan2(R_diff[1,2], R_diff[0,2])
+    #     q[4] = np.arctan2(np.sqrt(R_diff[1,2]**2 + R_diff[0,2]**2), R_diff[2,2])
+    #     q[5] = np.arctan2(R_diff[2,1], -R_diff[2,0])
+    #     # print("a")
+    # else:
+    #     q[3] = np.arctan2(-R_diff[1,2], -R_diff[0,2])
+    #     q[4] = np.arctan2(-np.sqrt(R_diff[1,2]**2 + R_diff[0,2]**2), R_diff[2,2])
+    #     q[5] = np.arctan2(-R_diff[2,1], R_diff[2,0])
+    #     # print("b")
 
     return q
 
@@ -89,39 +107,43 @@ def main(args=None):
     test_points = []
     rot = np.diag([1,-1,-1]) #@ np.array([[0.939, 0.343, -0.0344], [-0.342, 0.94, 0.00606], [0.0344, 0.00606, 0.999]])
 
-    # x_steps = 10
-    # y_steps = 100
-    # z_steps = 5
+    ### LINES
 
-    # ts = time.time()
+    x_steps = 10
+    y_steps = 10
+    z_steps = 5
 
-    # for k in range(z_steps):
-    #     for i in range(x_steps):
-    #         for j in range(y_steps):
-    #             tran = np.array([1.5*i/x_steps - 0.75, 1.5*j/y_steps - 0.75, k/z_steps - 0.3])
-    #             q = ik_uf850(tran, rot)
+    ts = time.time()
 
-    #             if not np.any(np.isnan(q)):
-    #                 test_points.append(list(q))
+    for k in range(z_steps):
+        for i in range(x_steps):
+            for j in range(y_steps):
+                tran = np.array([1.5*i/x_steps - 0.75, 1.5*j/y_steps - 0.75, k/z_steps - 0.3])
+                q = ik_uf850(tran, rot)
 
-    #                 # pos = arm.fk(np.array(q))
-    #                 # print(pos - np.vstack((np.hstack((rot, tran.reshape(3,1))), np.array([0,0,0,1]))))
-    #                 # print(np.linalg.norm(pos - np.vstack((np.hstack((rot, tran.reshape(3,1))), np.array([0,0,0,1])))))
+                if not np.any(np.isnan(q)):
+                    test_points.append(list(q))
+
+                    # pos = arm.fk(np.array(q))
+                    # print(pos - np.vstack((np.hstack((rot, tran.reshape(3,1))), np.array([0,0,0,1]))))
+                    # print(np.linalg.norm(pos - np.vstack((np.hstack((rot, tran.reshape(3,1))), np.array([0,0,0,1])))))
 
     # print((time.time() - ts)/(x_steps*y_steps*z_steps))
 
-    num_steps = 100
-    num_rotations = 4
-    max_radius = 0.8
-    min_height = -0.5
-    max_height = 0.3
-    
-    for i in range(num_steps+1):
-        tran = np.array([np.cos(2*num_rotations*np.pi*i/num_steps)*(i/num_steps * max_radius),np.sin(2*num_rotations*np.pi*i/num_steps)*(i/num_steps * max_radius),(i/num_steps * (max_height - min_height) + min_height)])
-        q = ik_uf850(tran, rot)
+    ### SPIRAL
 
-        if not np.any(np.isnan(q)):
-            test_points.append(list(q))
+    # num_steps = 100
+    # num_rotations = 4
+    # max_radius = 0.8
+    # min_height = -0.5
+    # max_height = 0.3
+    
+    # for i in range(num_steps+1):
+    #     tran = np.array([np.cos(2*num_rotations*np.pi*i/num_steps)*(i/num_steps * max_radius),np.sin(2*num_rotations*np.pi*i/num_steps)*(i/num_steps * max_radius),(i/num_steps * (max_height - min_height) + min_height)])
+    #     q = ik_uf850(tran, rot)
+
+    #     if not np.any(np.isnan(q)):
+    #         test_points.append(list(q))
 
 
     minimal_publisher = JointStatePublisher(test_points)
