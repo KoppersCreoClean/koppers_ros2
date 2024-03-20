@@ -1,0 +1,5 @@
+geometry_msgs/Point corner_1
+geometry_msgs/Point corner_2
+geometry_msgs/Point corner_3
+geometry_msgs/Point corner_4
+geometry_msgs/Quaternion orientation

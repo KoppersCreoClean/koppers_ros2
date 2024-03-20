@@ -1,0 +1,8 @@
+arm_scene_interface:
+  ros__parameters:
+    stl_scale: 0.001
+    origin_position: [0.0,0.0,0.0]
+    origin_orientation: [0.0,0.0,0.0,1.0]
+    cad_namespace: 'testbed'
+    section_widths: [2.0]
+    section_displacements: [0.0]

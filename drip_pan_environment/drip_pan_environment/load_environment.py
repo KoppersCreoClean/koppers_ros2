@@ -65,9 +65,6 @@ def main(args=None):
 
     rclpy.spin(publisher)
 
-    # Destroy the node explicitly
-    # (optional - otherwise it will be done automatically
-    # when the garbage collector destroys the node object)
     publisher.destroy_node()
     rclpy.shutdown()
 
