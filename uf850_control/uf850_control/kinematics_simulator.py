@@ -68,7 +68,7 @@ def ik_uf850(target_position, rotation):
 
     R_diff = raw_rotation.T @ target_rotation
 
-    if(abs(np.arctan2(R_diff[1,2], R_diff[0,2])) < abs(np.arctan2(-R_diff[1,2], -R_diff[0,2]))):
+    if(abs(np.arctan2(R_diff[1,2], R_diff[0,2])) > abs(np.arctan2(-R_diff[1,2], -R_diff[0,2]))):
         q[3] = np.arctan2(R_diff[1,2], R_diff[0,2])
         q[4] = np.arctan2(np.sqrt(R_diff[1,2]**2 + R_diff[0,2]**2), R_diff[2,2])
         q[5] = np.arctan2(R_diff[2,1], -R_diff[2,0])
@@ -109,8 +109,8 @@ def main(args=None):
 
     ### LINES
 
-    x_steps = 10
-    y_steps = 10
+    x_steps = 100
+    y_steps = 100
     z_steps = 5
 
     ts = time.time()
@@ -124,9 +124,10 @@ def main(args=None):
                 if not np.any(np.isnan(q)):
                     test_points.append(list(q))
 
-                    # pos = arm.fk(np.array(q))
+                    pos = arm.fk(np.array(q))
                     # print(pos - np.vstack((np.hstack((rot, tran.reshape(3,1))), np.array([0,0,0,1]))))
-                    # print(np.linalg.norm(pos - np.vstack((np.hstack((rot, tran.reshape(3,1))), np.array([0,0,0,1])))))
+                    if np.linalg.norm(pos - np.vstack((np.hstack((rot, tran.reshape(3,1))), np.array([0,0,0,1])))) > 1e-6:
+                        print(np.linalg.norm(pos - np.vstack((np.hstack((rot, tran.reshape(3,1))), np.array([0,0,0,1])))))
 
     # print((time.time() - ts)/(x_steps*y_steps*z_steps))
 
@@ -150,9 +151,9 @@ def main(args=None):
 
     rclpy.spin(minimal_publisher)
 
-    # Destroy the node explicitly
-    # (optional - otherwise it will be done automatically
-    # when the garbage collector destroys the node object)
+    # # Destroy the node explicitly
+    # # (optional - otherwise it will be done automatically
+    # # when the garbage collector destroys the node object)
     minimal_publisher.destroy_node()
     rclpy.shutdown()
 
