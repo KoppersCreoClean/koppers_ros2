@@ -12,6 +12,8 @@ from sensor_msgs.msg import JointState
 from geometry_msgs.msg import Pose
 from xarm_msgs.srv import PlanJoint, PlanExec, PlanPose, PlanSingleStraight
 from koppers_msgs.msg import RectangularCleanArea
+from tf2_ros.buffer import Buffer
+from tf2_ros.transform_listener import TransformListener
 
 
 class UF850Mover(Node):
@@ -23,6 +25,8 @@ class UF850Mover(Node):
         self.exec_plan_client = self.create_client(PlanExec, '/xarm_exec_plan')
         self.clean_subscriber = self.create_subscription(RectangularCleanArea, '/clean_area', self.clean_callback, 10)
         self.clean_publisher = self.create_publisher(Bool, '/clean_success', 10)
+        self.tf_buffer = Buffer()
+        self.tf_listener = TransformListener(self.tf_buffer, self)
 
         #TODO: probably a better way than just putting the DH parameters here
         dh = [[0, 0.364, 0, np.pi/2.0],
@@ -70,6 +74,12 @@ class UF850Mover(Node):
             q[5] = np.arctan2(-R_diff[2,1], R_diff[2,0])
 
         return q
+    
+    def get_transform(self, id1, id2):
+        T = self.tf_buffer.lookup_transform(id1, id2, rclpy.time.Time())
+        R = quaternion.as_rotation_matrix(quaternion.as_quat_array(np.array([T.transform.rotation.w,T.transform.rotation.x,T.transform.rotation.y,T.transform.rotation.z])))
+        t = np.array([T.transform.translation.x, T.transform.translation.y, T.transform.translation.z])
+        return R, t
 
     def clean_callback(self, msg):
         corners = np.array([[msg.corner_1.x,msg.corner_1.y,msg.corner_1.z], [msg.corner_2.x,msg.corner_2.y,msg.corner_2.z], [msg.corner_3.x,msg.corner_3.y,msg.corner_3.z], [msg.corner_4.x,msg.corner_4.y,msg.corner_4.z]])
@@ -107,6 +117,11 @@ class UF850Mover(Node):
         traj = self.cleaning_trajs[0]
         start_position = traj[0]
         pre_clean_position = start_position + self.orientation @ self.pre_clean_offset
+
+        R_ee_6, t_ee_6 = self.get_transform('ee_mode_0' + str(self.strategy_mode), 'link6')
+
+        pre_clean_position = start_position + self.cleaning_plane_orientation @ (self.pre_clean_offset + t_ee_6)
+        pre_clean_orientation = self.cleaning_plane_orientation @ R_ee_6
 
         q = self.ik_uf850(pre_clean_position, self.orientation)
 

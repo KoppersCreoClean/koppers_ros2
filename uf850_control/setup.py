@@ -21,7 +21,8 @@ setup(
     entry_points={
         'console_scripts': [
             'kinematics_simulator = uf850_control.kinematics_simulator:main',
-            'mover = uf850_control.uf850_mover:main'
+            'mover = uf850_control.uf850_mover:main',
+            'cleaner = uf850_control.uf850_cleaner:main'
         ],
     },
 )

@@ -23,8 +23,10 @@ class ArmSceneInterface(Node):
         self.cart_position_subscriber = self.create_subscription(Float32, '/cart_position', self.cart_position_callback, 10)
         self.collision_object_publisher = self.create_publisher(CollisionObject, '/collision_object', 10)
         self.attached_collision_object_publisher = self.create_publisher(AttachedCollisionObject, '/attached_collision_object', 10)
+        self.update_scene_server = self.create_service(Trigger, '/update_scene', self.update_scene_callback)
 
-        self.tf_broadcaster = StaticTransformBroadcaster(self)
+        self.tf_broadcaster_0 = StaticTransformBroadcaster(self)
+        self.tf_broadcaster_1 = StaticTransformBroadcaster(self)
 
         self.declare_parameters(
             namespace='',
@@ -53,40 +55,40 @@ class ArmSceneInterface(Node):
         self.cart_position = 0.0
 
         self.publish_ee_transforms()
-        self.publish_scene_objects()
+        self.publish_scene_objects(update_tool=True)
 
     def publish_ee_transforms(self):
+        # end effector mode 0
+        msg = TransformStamped()
+        msg.transform.translation.x = 0.125
+        msg.transform.translation.y = 0.0
+        msg.transform.translation.z = 0.24
+        msg.transform.rotation.x = 0.0
+        msg.transform.rotation.y = 0.9914449
+        msg.transform.rotation.z = 0.0
+        msg.transform.rotation.w = 0.1305262
+
+        msg.header.stamp = self.get_clock().now().to_msg()
+        msg.header.frame_id = 'link6'
+        msg.child_frame_id = 'ee_mode_0'
+
+        self.tf_broadcaster_0.sendTransform(msg)
+
         # end effector mode 1
         msg = TransformStamped()
-        msg.transform.translation.x = 0.0
+        msg.transform.translation.x = 0.125
         msg.transform.translation.y = 0.0
-        msg.transform.translation.z = 0.15
-        msg.transform.rotation.x = 0.0
-        msg.transform.rotation.y = 0.9238795
-        msg.transform.rotation.z = 0.0
-        msg.transform.rotation.w = 0.3826834
+        msg.transform.translation.z = 0.24
+        msg.transform.rotation.x = 0.9914449
+        msg.transform.rotation.y = 0.0
+        msg.transform.rotation.z = 0.1305262
+        msg.transform.rotation.w = 0.0
 
         msg.header.stamp = self.get_clock().now().to_msg()
         msg.header.frame_id = 'link6'
         msg.child_frame_id = 'ee_mode_1'
 
-        self.tf_broadcaster.sendTransform(msg)
-
-        # end effector mode 2
-        msg = TransformStamped()
-        msg.transform.translation.x = -0.05
-        msg.transform.translation.y = 0.0
-        msg.transform.translation.z = 0.13
-        msg.transform.rotation.x = 0.9238795
-        msg.transform.rotation.y = 0.0
-        msg.transform.rotation.z = 0.3826834
-        msg.transform.rotation.w = 0.0
-
-        msg.header.stamp = self.get_clock().now().to_msg()
-        msg.header.frame_id = 'link6'
-        msg.child_frame_id = 'ee_mode_2'
-
-        self.tf_broadcaster.sendTransform(msg)
+        self.tf_broadcaster_1.sendTransform(msg)
 
 
     def cart_position_callback(self, msg):
@@ -95,46 +97,47 @@ class ArmSceneInterface(Node):
     def linear_actuator_position_callback(self, msg):
         self.linear_actuator_position = msg.data
 
-    def publish_scene_objects(self):
+    def publish_scene_objects(self, update_tool=False):
+        
+        if update_tool:
+            #add cleaning tool
+            msg = AttachedCollisionObject()
+            msg.link_name = "link6"
+            msg.object.pose.position.x = 0.29
+            msg.object.pose.position.y = -0.075
+            msg.object.pose.position.z = 0.298
+            msg.object.pose.orientation.x = -0.5
+            msg.object.pose.orientation.y = -0.5
+            msg.object.pose.orientation.z = 0.5
+            msg.object.pose.orientation.w = 0.5
+            msg.object.id = "cleaning_tool"
+            msg.touch_links = ["link6"]
 
-        #add cleaning tool
-        msg = AttachedCollisionObject()
-        msg.link_name = "link6"
-        msg.object.pose.position.x = 0.219
-        msg.object.pose.position.y = -0.076
-        msg.object.pose.position.z = 0.245
-        msg.object.pose.orientation.x = -0.5
-        msg.object.pose.orientation.y = -0.5
-        msg.object.pose.orientation.z = 0.5
-        msg.object.pose.orientation.w = 0.5
-        msg.object.id = "cleaning_tool"
-        msg.touch_links = ["link6"]
+            raw_mesh = meshio.read(os.path.join(self.stl_directory,'cleaning_tool.STL'))
+            moveit_mesh = Mesh()
 
-        raw_mesh = meshio.read(os.path.join(self.stl_directory,'cleaning_tool.STL'))
-        moveit_mesh = Mesh()
+            for p in raw_mesh.points:
+                moveit_mesh.vertices.append(Point(x=p[0]*self.stl_scale,y=p[1]*self.stl_scale,z=p[2]*self.stl_scale))
+            for v in raw_mesh.cells_dict['triangle']:
+                moveit_mesh.triangles.append(MeshTriangle(vertex_indices=v))
+            msg.object.meshes = [moveit_mesh]
+            msg.object.operation = bytes([0])
 
-        for p in raw_mesh.points:
-            moveit_mesh.vertices.append(Point(x=p[0]*self.stl_scale,y=p[1]*self.stl_scale,z=p[2]*self.stl_scale))
-        for v in raw_mesh.cells_dict['triangle']:
-            moveit_mesh.triangles.append(MeshTriangle(vertex_indices=v))
-        msg.object.meshes = [moveit_mesh]
-        msg.object.operation = bytes([0])
+            msg.object.header.stamp = self.get_clock().now().to_msg()
 
-        msg.object.header.stamp = self.get_clock().now().to_msg()
-
-        self.attached_collision_object_publisher.publish(msg)
+            self.attached_collision_object_publisher.publish(msg)
 
         #add mobile platform
         msg = CollisionObject()
         msg.header.frame_id = "world"
         msg.pose = Pose()
-        msg.pose.position.x = -0.254
-        msg.pose.position.y = -0.78 + self.linear_actuator_position
+        msg.pose.position.x = 0.254
+        msg.pose.position.y = 0.76 + self.linear_actuator_position
         msg.pose.position.z = -0.19
-        msg.pose.orientation.x = 0.5
+        msg.pose.orientation.x = -0.5
         msg.pose.orientation.y = 0.5
         msg.pose.orientation.z = 0.5
-        msg.pose.orientation.w = 0.5
+        msg.pose.orientation.w = -0.5
         msg.id = 'robot_chassis'
 
         raw_mesh = meshio.read(os.path.join(self.stl_directory,'robot_chassis.STL'))
