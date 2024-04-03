@@ -11,10 +11,19 @@ from std_msgs.msg import Bool
 from sensor_msgs.msg import JointState
 from geometry_msgs.msg import Pose
 from xarm_msgs.srv import PlanJoint, PlanExec, PlanPose, PlanSingleStraight
-from koppers_msgs.msg import RectangularCleanArea
+from koppers_msgs.msg import CleaningRequest, PoseRequest
 from tf2_ros.buffer import Buffer
 from tf2_ros.transform_listener import TransformListener
+from enum import Enum, auto
 
+class State(Enum):
+    CLEAN_CALLBACK = auto()
+    PRE_CLEAN = auto()
+    START_CLEAN = auto()
+    MAIN_CLEAN = auto()
+    STOP_CLEAN = auto()
+    MOVE_CALLBACK = auto()
+    MOVE = auto()
 
 class UF850Mover(Node):
 
@@ -23,8 +32,9 @@ class UF850Mover(Node):
         self.joint_plan_client = self.create_client(PlanJoint, '/xarm_joint_plan')
         self.straight_plan_client = self.create_client(PlanSingleStraight, '/xarm_straight_plan')
         self.exec_plan_client = self.create_client(PlanExec, '/xarm_exec_plan')
-        self.clean_subscriber = self.create_subscription(RectangularCleanArea, '/clean_area', self.clean_callback, 10)
-        self.clean_publisher = self.create_publisher(Bool, '/clean_success', 10)
+        self.clean_subscriber = self.create_subscription(CleaningRequest, '/uf850_clean_segment', self.clean_callback, 10)
+        self.move_subscriber = self.create_subscription(PoseRequest, '/uf850_move', self.move_callback, 10)
+        self.feedback_publisher = self.create_publisher(Bool, '/uf850_success', 10)
         self.tf_buffer = Buffer()
         self.tf_listener = TransformListener(self.tf_buffer, self)
 
@@ -82,181 +92,176 @@ class UF850Mover(Node):
         return R, t
 
     def clean_callback(self, msg):
-        corners = np.array([[msg.corner_1.x,msg.corner_1.y,msg.corner_1.z], [msg.corner_2.x,msg.corner_2.y,msg.corner_2.z], [msg.corner_3.x,msg.corner_3.y,msg.corner_3.z], [msg.corner_4.x,msg.corner_4.y,msg.corner_4.z]])
-        self.orientation = quaternion.as_rotation_matrix(quaternion.as_quat_array(np.array([msg.orientation.w,msg.orientation.x,msg.orientation.y,msg.orientation.z])))
-        print(self.orientation)
-        width = np.sqrt(np.sum(np.square(corners[0,:] - corners[1,:])))
-        height = np.sqrt(np.sum(np.square(corners[0,:] - corners[3,:])))
-        num_passes = int(np.ceil(width/self.squeegee_width))
-        clean_offset = (self.squeegee_width - (num_passes * self.squeegee_width - width)) / 2
-        self.cleaning_trajs = []
-        for i in range(num_passes):
-            start_pos = corners[0,:] * (num_passes - i) / num_passes + corners[1,:] * i / num_passes + clean_offset * (corners[1,:] - corners[0,:]) / width
-            end_pos = corners[3,:] * (num_passes - i) / num_passes + corners[2,:] * i / num_passes + clean_offset * (corners[1,:] - corners[0,:]) / width
-            self.cleaning_trajs.append(np.array([start_pos, end_pos]))
-        print(self.cleaning_trajs)
-        print("beginning cleaning section...")
-        self.clean_plan_segment(None)
+        self.state = State.CLEAN_CALLBACK
+        self.get_logger().info("In state " + str(self.state))
 
-    def clean_plan_segment(self, exec_response):
-        if exec_response is None:
-            print(self.cleaning_trajs[0])
-            self.plan_pre_clean()
-        else:
-            success = exec_response.result().success
-            print("execution success? " + str(success))
-            if success and len(self.cleaning_trajs) == 0:
-                self.clean_publisher.publish(Bool(data=True))
-            elif success:
-                print(self.cleaning_trajs[0])
-                self.plan_pre_clean()
-            else:
-                self.clean_publisher.publish(Bool(data=False))
+        self.start_position = np.array([msg.start_position.x, msg.start_position.y, msg.start_position.z])
+        self.end_position = np.array([msg.end_position.x, msg.end_position.y, msg.end_position.z])
+        self.cleaning_plane_orientation = quaternion.as_rotation_matrix(quaternion.as_quat_array(np.array([msg.orientation.w,msg.orientation.x,msg.orientation.y,msg.orientation.z])))
+        self.mode = msg.mode
+
+        self.plan_pre_clean()
 
     def plan_pre_clean(self):
-        traj = self.cleaning_trajs[0]
-        start_position = traj[0]
-        pre_clean_position = start_position + self.orientation @ self.pre_clean_offset
+        self.state = State.PRE_CLEAN
+        self.get_logger().info("In state " + str(self.state) + ", mode: " + str(self.mode))
 
-        R_ee_6, t_ee_6 = self.get_transform('ee_mode_0' + str(self.strategy_mode), 'link6')
+        R_ee_6, t_ee_6 = self.get_transform('ee_mode_' + str(self.mode), 'link6')
 
-        pre_clean_position = start_position + self.cleaning_plane_orientation @ (self.pre_clean_offset + t_ee_6)
+        pre_clean_position = self.start_position + self.cleaning_plane_orientation @ (self.pre_clean_offset + t_ee_6)
         pre_clean_orientation = self.cleaning_plane_orientation @ R_ee_6
 
-        q = self.ik_uf850(pre_clean_position, self.orientation)
+        q = self.ik_uf850(pre_clean_position, pre_clean_orientation)
 
-        print("planning pre_clean...")
         joint_request = PlanJoint.Request()
         joint_request.target = q.tolist()
-        plan_future = self.joint_plan_client.call_async(joint_request)
-        plan_future.add_done_callback(self.exec_pre_clean)
-    
-    def exec_pre_clean(self, plan_response):
-        success = plan_response.result().success
-        print("planning success? " + str(success))
+        pre_clean_plan = self.joint_plan_client.call_async(joint_request)
+        pre_clean_plan.add_done_callback(self.moveit_callback)
+
+    def plan_start_clean(self):
+        self.state = State.START_CLEAN
+        self.get_logger().info("In state " + str(self.state) + ", mode: " + str(self.mode))
+
+        R_ee_6, t_ee_6 = self.get_transform('ee_mode_' + str(self.mode), 'link6')
+
+        start_clean_position = self.start_position + self.cleaning_plane_orientation @ t_ee_6
+        start_clean_orientation = quaternion.from_rotation_matrix(self.cleaning_plane_orientation @ R_ee_6)
+
+        straight_path_request = PlanSingleStraight.Request()
+        start_clean_pose = Pose()
+        start_clean_pose.position.x = start_clean_position[0]
+        start_clean_pose.position.y = start_clean_position[1]
+        start_clean_pose.position.z = start_clean_position[2]
+        start_clean_pose.orientation.x = start_clean_orientation.x
+        start_clean_pose.orientation.y = start_clean_orientation.y
+        start_clean_pose.orientation.z = start_clean_orientation.z
+        start_clean_pose.orientation.w = start_clean_orientation.w
+
+        straight_path_request.target = [start_clean_pose]
+        plan_future = self.straight_plan_client.call_async(straight_path_request)
+        plan_future.add_done_callback(self.moveit_callback)
+
+    def plan_main_clean(self):
+        self.state = State.MAIN_CLEAN
+        self.get_logger().info("In state " + str(self.state) + ", mode: " + str(self.mode))
+
+        R_ee_6, t_ee_6 = self.get_transform('ee_mode_' + str(self.mode), 'link6')
+
+        end_clean_position = self.end_position + self.cleaning_plane_orientation @ t_ee_6
+        end_clean_orientation = quaternion.from_rotation_matrix(self.cleaning_plane_orientation @ R_ee_6)
+
+        straight_path_request = PlanSingleStraight.Request()
+        end_clean_pose = Pose()
+        end_clean_pose.position.x = end_clean_position[0]
+        end_clean_pose.position.y = end_clean_position[1]
+        end_clean_pose.position.z = end_clean_position[2]
+        end_clean_pose.orientation.x = end_clean_orientation.x
+        end_clean_pose.orientation.y = end_clean_orientation.y
+        end_clean_pose.orientation.z = end_clean_orientation.z
+        end_clean_pose.orientation.w = end_clean_orientation.w
+
+        straight_path_request.target = [end_clean_pose]
+        plan_future = self.straight_plan_client.call_async(straight_path_request)
+        plan_future.add_done_callback(self.moveit_callback)
+
+    def plan_stop_clean(self):
+        self.state = State.STOP_CLEAN
+        self.get_logger().info("In state " + str(self.state) + ", mode: " + str(self.mode))
+
+        R_ee_6, t_ee_6 = self.get_transform('ee_mode_' + str(self.mode), 'link6')
+
+        stop_clean_position = self.end_position + self.cleaning_plane_orientation @ (self.pre_clean_offset + t_ee_6)
+        stop_clean_orientation = quaternion.from_rotation_matrix(self.cleaning_plane_orientation @ R_ee_6)
+
+        straight_path_request = PlanSingleStraight.Request()
+        stop_clean_pose = Pose()
+        stop_clean_pose.position.x = stop_clean_position[0]
+        stop_clean_pose.position.y = stop_clean_position[1]
+        stop_clean_pose.position.z = stop_clean_position[2]
+        stop_clean_pose.orientation.x = stop_clean_orientation.x
+        stop_clean_pose.orientation.y = stop_clean_orientation.y
+        stop_clean_pose.orientation.z = stop_clean_orientation.z
+        stop_clean_pose.orientation.w = stop_clean_orientation.w
+
+        straight_path_request.target = [stop_clean_pose]
+        plan_future = self.straight_plan_client.call_async(straight_path_request)
+        plan_future.add_done_callback(self.moveit_callback)
+
+    def move_callback(self, msg):
+        self.state = State.MOVE_CALLBACK
+        self.get_logger().info("In state " + str(self.state))
+
+        self.desired_position = np.array([msg.pose.position.x, msg.pose.position.y, msg.pose.position.z])
+        self.desired_orientation = quaternion.as_rotation_matrix(quaternion.as_quat_array(np.array([msg.pose.orientation.w,msg.pose.orientation.x,msg.pose.orientation.y,msg.pose.orientation.z])))
+        self.mode = msg.mode
+
+        self.plan_move()
+
+    def plan_move(self):
+        self.state = State.MOVE
+        self.get_logger().info("In state " + str(self.state) + ", mode: " + str(self.mode))
+
+        R_ee_6, t_ee_6 = self.get_transform('ee_mode_' + str(self.mode), 'link6')
+
+        position = self.desired_position + self.desired_orientation @ t_ee_6
+        orientation = self.cleaning_plane_orientation @ R_ee_6
+
+        q = self.ik_uf850(position, orientation)
+
+        joint_request = PlanJoint.Request()
+        joint_request.target = q.tolist()
+        pre_clean_plan = self.joint_plan_client.call_async(joint_request)
+        pre_clean_plan.add_done_callback(self.moveit_callback)
+
+    def execute_latest_plan(self):
+        self.get_logger().info("In execution")
+        exec_request = PlanExec.Request()
+        exec_request.wait = True
+        exec_future = self.exec_plan_client.call_async(exec_request)
+        exec_future.add_done_callback(self.moveit_callback)
+
+    def request_finished(self, success):
+        msg = Bool()
+        msg.data = success
+        self.feedback_publisher.publish(msg)
+
+    def moveit_callback(self, moveit_response):
+        success = moveit_response.result().success
         if success:
-            print("executing pre_clean...")
-            exec_request = PlanExec.Request()
-            exec_request.wait = True
-            exec_future = self.exec_plan_client.call_async(exec_request)
-            exec_future.add_done_callback(self.plan_start_clean)
+            if self.latest_plan_executed:
+                self.latest_plan_executed = False
+                match self.state:
+                    case State.PRE_CLEAN:
+                        self.plan_start_clean()
+                    case State.START_CLEAN:
+                        self.plan_main_clean()
+                    case State.MAIN_CLEAN:
+                        self.plan_stop_clean()
+                    case State.STOP_CLEAN:
+                        self.request_finised(True)
+                    case State.MOVE:
+                        self.request_finised(True)
+            else:
+                self.latest_plan_executed = True
+                self.execute_latest_plan()
         else:
-            self.clean_publisher.publish(Bool(data=False))
-
-    def plan_start_clean(self, exec_response):
-        success = exec_response.result().success
-        print("execution success? " + str(success))
-        if success:
-            traj = self.cleaning_trajs[0]
-            start_position = traj[0]
-            start_orientation = quaternion.from_rotation_matrix(self.orientation)
-
-            print("planning start_clean...")
-            straight_path_request = PlanSingleStraight.Request()
-            start_pose = Pose()
-            start_pose.position.x = start_position[0]
-            start_pose.position.y = start_position[1]
-            start_pose.position.z = start_position[2]
-            start_pose.orientation.x = start_orientation.x
-            start_pose.orientation.y = start_orientation.y
-            start_pose.orientation.z = start_orientation.z
-            start_pose.orientation.w = start_orientation.w
-
-            straight_path_request.target = [start_pose]
-            plan_future = self.straight_plan_client.call_async(straight_path_request)
-            plan_future.add_done_callback(self.exec_start_clean)
-        else:
-            self.clean_publisher.publish(Bool(data=False))
-
-    def exec_start_clean(self, plan_response):
-        success = plan_response.result().success
-        print("planning success? " + str(success))
-        if success:
-            print("executing start_clean...")
-            exec_request = PlanExec.Request()
-            exec_request.wait = True
-            exec_future = self.exec_plan_client.call_async(exec_request)
-            exec_future.add_done_callback(self.plan_clean)
-        else:
-            self.clean_publisher.publish(Bool(data=False))
-
-    def plan_clean(self, exec_response):
-        success = exec_response.result().success
-        print("execution success? " + str(success))
-        if success:
-            traj = self.cleaning_trajs[0]
-            end_position = traj[1]
-            end_orientation = quaternion.from_rotation_matrix(self.orientation)
-
-            print("planning clean...")
-            self.start_time = time.time()
-            straight_path_request = PlanSingleStraight.Request()
-            end_pose = Pose()
-            end_pose.position.x = end_position[0]
-            end_pose.position.y = end_position[1]
-            end_pose.position.z = end_position[2]
-            end_pose.orientation.x = end_orientation.x
-            end_pose.orientation.y = end_orientation.y
-            end_pose.orientation.z = end_orientation.z
-            end_pose.orientation.w = end_orientation.w
-
-            straight_path_request.target = [end_pose]
-            plan_future = self.straight_plan_client.call_async(straight_path_request)
-            plan_future.add_done_callback(self.exec_clean)
-        else:
-            self.clean_publisher.publish(Bool(data=False))
-
-    def exec_clean(self, plan_response):
-        print("time taken: ", time.time() - self.start_time)
-        success = plan_response.result().success
-        print("planning success? " + str(success))
-        if success:
-            print("executing clean...")
-            exec_request = PlanExec.Request()
-            exec_request.wait = True
-            exec_future = self.exec_plan_client.call_async(exec_request)
-            exec_future.add_done_callback(self.plan_end_clean)
-        else:
-            self.clean_publisher.publish(Bool(data=False))
-
-    def plan_end_clean(self, exec_response):
-        success = exec_response.result().success
-        print("execution success? " + str(success))
-        if success:
-            traj = self.cleaning_trajs[0]
-            end_position = traj[1]
-            post_clean_position = end_position + self.orientation @ self.pre_clean_offset
-            post_clean_orientation = quaternion.from_rotation_matrix(self.orientation)
-
-            print("planning end_clean...")
-            straight_path_request = PlanSingleStraight.Request()
-            post_clean_pose = Pose()
-            post_clean_pose.position.x = post_clean_position[0]
-            post_clean_pose.position.y = post_clean_position[1]
-            post_clean_pose.position.z = post_clean_position[2]
-            post_clean_pose.orientation.x = post_clean_orientation.x
-            post_clean_pose.orientation.y = post_clean_orientation.y
-            post_clean_pose.orientation.z = post_clean_orientation.z
-            post_clean_pose.orientation.w = post_clean_orientation.w
-
-            straight_path_request.target = [post_clean_pose]
-            plan_future = self.straight_plan_client.call_async(straight_path_request)
-            plan_future.add_done_callback(self.exec_end_clean)
-        else:
-            self.clean_publisher.publish(Bool(data=False))
-
-    def exec_end_clean(self, plan_response):
-        success = plan_response.result().success
-        print("planning success? " + str(success))
-        if success:
-            print("executing end_clean...")
-            exec_request = PlanExec.Request()
-            exec_request.wait = True
-            exec_future = self.exec_plan_client.call_async(exec_request)
-            self.cleaning_trajs.pop(0)
-            exec_future.add_done_callback(self.clean_plan_segment)
-        else:
-            self.clean_publisher.publish(Bool(data=False))
+            self.get_logger().info("moveit failed")
+            if not self.latest_plan_executed:
+                self.latest_plan_executed = False
+                match self.state:
+                    case State.PRE_CLEAN:
+                        self.plan_pre_clean()
+                    case State.START_CLEAN:
+                        self.plan_start_clean()
+                    case State.MAIN_CLEAN:
+                        self.plan_main_clean()
+                    case State.STOP_CLEAN:
+                        self.plan_stop_clean()
+                    case State.MOVE:
+                        self.plan_move()
+            else:
+                self.latest_plan_executed = True
+                self.execute_latest_plan()
 
 def main(args=None):
     rclpy.init(args=args)

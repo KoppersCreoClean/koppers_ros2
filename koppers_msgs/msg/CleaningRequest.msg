@@ -1,0 +1,4 @@
+geometry_msgs/Point start_position
+geometry_msgs/Point end_position
+geometry_msgs/Quaternion orientation
+uint8 mode

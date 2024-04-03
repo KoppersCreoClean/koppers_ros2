@@ -37,6 +37,8 @@ find_package(geometry_msgs REQUIRED)
 find_package(rosidl_default_generators REQUIRED)
 
 rosidl_generate_interfaces(${PROJECT_NAME}
+  "msg/CleaningRequest.msg"
+  "msg/PoseRequest.msg"
   "msg/RectangularCleanArea.msg"
   DEPENDENCIES geometry_msgs
 )
