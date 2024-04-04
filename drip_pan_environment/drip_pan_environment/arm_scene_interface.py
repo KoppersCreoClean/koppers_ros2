@@ -27,6 +27,8 @@ class ArmSceneInterface(Node):
 
         self.tf_broadcaster_0 = StaticTransformBroadcaster(self)
         self.tf_broadcaster_1 = StaticTransformBroadcaster(self)
+        self.tf_broadcaster_2 = StaticTransformBroadcaster(self)
+        self.tf_broadcaster_3 = StaticTransformBroadcaster(self)
 
         self.declare_parameters(
             namespace='',
@@ -60,35 +62,67 @@ class ArmSceneInterface(Node):
     def publish_ee_transforms(self):
         # end effector mode 0
         msg = TransformStamped()
-        msg.transform.translation.x = 0.125
-        msg.transform.translation.y = 0.0
-        msg.transform.translation.z = 0.24
-        msg.transform.rotation.x = 0.0
-        msg.transform.rotation.y = 0.9914449
-        msg.transform.rotation.z = 0.0
-        msg.transform.rotation.w = 0.1305262
+        msg.transform.translation.x = 0.0
+        msg.transform.translation.y = -0.123
+        msg.transform.translation.z = 0.245
+        msg.transform.rotation.x = 0.7010574
+        msg.transform.rotation.y = 0.7010574
+        msg.transform.rotation.z = -0.092296
+        msg.transform.rotation.w = 0.092296
 
         msg.header.stamp = self.get_clock().now().to_msg()
-        msg.header.frame_id = 'link6'
+        msg.header.frame_id = 'link_eef'
         msg.child_frame_id = 'ee_mode_0'
 
         self.tf_broadcaster_0.sendTransform(msg)
 
         # end effector mode 1
         msg = TransformStamped()
-        msg.transform.translation.x = 0.125
-        msg.transform.translation.y = 0.0
-        msg.transform.translation.z = 0.24
-        msg.transform.rotation.x = 0.9914449
-        msg.transform.rotation.y = 0.0
-        msg.transform.rotation.z = 0.1305262
-        msg.transform.rotation.w = 0.0
+        msg.transform.translation.x = 0.0
+        msg.transform.translation.y = -0.123
+        msg.transform.translation.z = 0.245
+        msg.transform.rotation.x = 0.7010574
+        msg.transform.rotation.y = -0.7010574
+        msg.transform.rotation.z = 0.092296
+        msg.transform.rotation.w = 0.092296
 
         msg.header.stamp = self.get_clock().now().to_msg()
-        msg.header.frame_id = 'link6'
+        msg.header.frame_id = 'link_eef'
         msg.child_frame_id = 'ee_mode_1'
 
         self.tf_broadcaster_1.sendTransform(msg)
+
+        # left camera
+        msg = TransformStamped()
+        msg.transform.translation.x = 0.06
+        msg.transform.translation.y = 0.05
+        msg.transform.translation.z = 0.0
+        msg.transform.rotation.x = 0.0
+        msg.transform.rotation.y = 0.7071068
+        msg.transform.rotation.z = 0.7071068
+        msg.transform.rotation.w = 0.0
+
+        msg.header.stamp = self.get_clock().now().to_msg()
+        msg.header.frame_id = 'link_eef'
+        msg.child_frame_id = 'left_camera'
+
+        self.tf_broadcaster_2.sendTransform(msg)
+
+        # right camera
+        msg = TransformStamped()
+        msg.transform.translation.x = -0.06
+        msg.transform.translation.y = 0.05
+        msg.transform.translation.z = 0.0
+        msg.transform.rotation.x = 0.0
+        msg.transform.rotation.y = 0.7071068
+        msg.transform.rotation.z = 0.7071068
+        msg.transform.rotation.w = 0.0
+
+        msg.header.stamp = self.get_clock().now().to_msg()
+        msg.header.frame_id = 'link_eef'
+        msg.child_frame_id = 'right_camera'
+
+        self.tf_broadcaster_3.sendTransform(msg)
 
 
     def cart_position_callback(self, msg):
@@ -103,13 +137,13 @@ class ArmSceneInterface(Node):
             #add cleaning tool
             msg = AttachedCollisionObject()
             msg.link_name = "link6"
-            msg.object.pose.position.x = 0.29
-            msg.object.pose.position.y = -0.075
-            msg.object.pose.position.z = 0.298
-            msg.object.pose.orientation.x = -0.5
-            msg.object.pose.orientation.y = -0.5
-            msg.object.pose.orientation.z = 0.5
-            msg.object.pose.orientation.w = 0.5
+            msg.object.pose.position.x = 0.225  #0.238
+            msg.object.pose.position.y = 0.138  #0.138
+            msg.object.pose.position.z = 0.30   #0.286
+            msg.object.pose.orientation.x = 0.0
+            msg.object.pose.orientation.y = -0.7071068
+            msg.object.pose.orientation.z = 0.7071068
+            msg.object.pose.orientation.w = 0.0
             msg.object.id = "cleaning_tool"
             msg.touch_links = ["link6"]
 

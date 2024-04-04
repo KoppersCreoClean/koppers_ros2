@@ -1,2 +1,2 @@
 geometry_msgs/Pose pose
-uint8 mode
+string reference_frame

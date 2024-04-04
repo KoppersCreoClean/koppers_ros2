@@ -32,9 +32,10 @@ class UF850Mover(Node):
         self.joint_plan_client = self.create_client(PlanJoint, '/xarm_joint_plan')
         self.straight_plan_client = self.create_client(PlanSingleStraight, '/xarm_straight_plan')
         self.exec_plan_client = self.create_client(PlanExec, '/xarm_exec_plan')
-        self.clean_subscriber = self.create_subscription(CleaningRequest, '/uf850_clean_segment', self.clean_callback, 10)
+        self.clean_subscriber = self.create_subscription(CleaningRequest, '/uf850_clean', self.clean_callback, 10)
         self.move_subscriber = self.create_subscription(PoseRequest, '/uf850_move', self.move_callback, 10)
-        self.feedback_publisher = self.create_publisher(Bool, '/uf850_success', 10)
+        self.clean_publisher = self.create_publisher(Bool, '/uf850_clean_success', 10)
+        self.move_publisher = self.create_publisher(Bool, '/uf850_move_success', 10)
         self.tf_buffer = Buffer()
         self.tf_listener = TransformListener(self.tf_buffer, self)
 
@@ -48,7 +49,7 @@ class UF850Mover(Node):
         
         self.arm = SerialArm(dh)
         self.squeegee_width = 0.15
-        self.pre_clean_offset = np.array([0, 0, -0.01])
+        self.pre_clean_offset = np.array([0, 0, 0.01])
         self.cleaning_trajs = None
         self.orientation = None
 
@@ -193,18 +194,18 @@ class UF850Mover(Node):
 
         self.desired_position = np.array([msg.pose.position.x, msg.pose.position.y, msg.pose.position.z])
         self.desired_orientation = quaternion.as_rotation_matrix(quaternion.as_quat_array(np.array([msg.pose.orientation.w,msg.pose.orientation.x,msg.pose.orientation.y,msg.pose.orientation.z])))
-        self.mode = msg.mode
+        self.reference_frame = msg.reference_frame
 
         self.plan_move()
 
     def plan_move(self):
         self.state = State.MOVE
-        self.get_logger().info("In state " + str(self.state) + ", mode: " + str(self.mode))
+        self.get_logger().info("In state " + str(self.state))
 
-        R_ee_6, t_ee_6 = self.get_transform('ee_mode_' + str(self.mode), 'link6')
+        R_ee_6, t_ee_6 = self.get_transform(self.reference_frame, 'link6')
 
         position = self.desired_position + self.desired_orientation @ t_ee_6
-        orientation = self.cleaning_plane_orientation @ R_ee_6
+        orientation = self.desired_orientation @ R_ee_6
 
         q = self.ik_uf850(position, orientation)
 
@@ -212,6 +213,7 @@ class UF850Mover(Node):
         joint_request.target = q.tolist()
         pre_clean_plan = self.joint_plan_client.call_async(joint_request)
         pre_clean_plan.add_done_callback(self.moveit_callback)
+        self.latest_plan_executed = False
 
     def execute_latest_plan(self):
         self.get_logger().info("In execution")
@@ -220,10 +222,15 @@ class UF850Mover(Node):
         exec_future = self.exec_plan_client.call_async(exec_request)
         exec_future.add_done_callback(self.moveit_callback)
 
-    def request_finished(self, success):
+    def move_request_finished(self, success):
         msg = Bool()
         msg.data = success
-        self.feedback_publisher.publish(msg)
+        self.move_publisher.publish(msg)
+
+    def clean_request_finished(self, success):
+        msg = Bool()
+        msg.data = success
+        self.clean_publisher.publish(msg)
 
     def moveit_callback(self, moveit_response):
         success = moveit_response.result().success
@@ -238,9 +245,9 @@ class UF850Mover(Node):
                     case State.MAIN_CLEAN:
                         self.plan_stop_clean()
                     case State.STOP_CLEAN:
-                        self.request_finised(True)
+                        self.clean_request_finished(True)
                     case State.MOVE:
-                        self.request_finised(True)
+                        self.move_request_finished(True)
             else:
                 self.latest_plan_executed = True
                 self.execute_latest_plan()
