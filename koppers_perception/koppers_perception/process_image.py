@@ -337,7 +337,6 @@ class ImageProcessor(Node):
 
 
         self.base_scaled_locations = T @ camera_scaled_locations
-        print(self.base_scaled_locations)
 
         response.success = True
         return response
@@ -362,13 +361,11 @@ class ImageProcessor(Node):
 
         if self.base_scaled_locations is not None:
             locations = np.where(np.logical_and(np.logical_and(np.logical_and(self.base_scaled_locations[0,:] > x_min, self.base_scaled_locations[0,:] < x_max), self.base_scaled_locations[1,:] > y_min), self.base_scaled_locations[1,:] < y_max))
-            print(self.base_scaled_locations.shape)
-            print(len(locations))
-            if len(locations) > 0:
+            if len(locations[0]) > 0:
                 response.y_min_result = np.min(self.base_scaled_locations[1,locations])
                 response.y_max_result = np.max(self.base_scaled_locations[1,locations])
             else:
-                response.y_min_result = y_min
+                response.y_min_result = y_max
                 response.y_max_result = y_max
             return response
         else:

@@ -95,8 +95,8 @@ class ArmSceneInterface(Node):
         # left camera
         msg = TransformStamped()
         msg.transform.translation.x = 0.06
-        msg.transform.translation.y = 0.05
-        msg.transform.translation.z = 0.0
+        msg.transform.translation.y = 0.055
+        msg.transform.translation.z = 0.02
         msg.transform.rotation.x = 0.0
         msg.transform.rotation.y = 0.7071068
         msg.transform.rotation.z = 0.7071068
@@ -111,8 +111,8 @@ class ArmSceneInterface(Node):
         # right camera
         msg = TransformStamped()
         msg.transform.translation.x = -0.06
-        msg.transform.translation.y = 0.05
-        msg.transform.translation.z = 0.0
+        msg.transform.translation.y = 0.055
+        msg.transform.translation.z = 0.02
         msg.transform.rotation.x = 0.0
         msg.transform.rotation.y = 0.7071068
         msg.transform.rotation.z = 0.7071068
@@ -137,7 +137,7 @@ class ArmSceneInterface(Node):
             #add cleaning tool
             msg = AttachedCollisionObject()
             msg.link_name = "link6"
-            msg.object.pose.position.x = 0.225  #0.238
+            msg.object.pose.position.x = 0.238  #0.238
             msg.object.pose.position.y = 0.138  #0.138
             msg.object.pose.position.z = 0.30   #0.286
             msg.object.pose.orientation.x = 0.0
