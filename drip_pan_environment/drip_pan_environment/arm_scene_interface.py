@@ -63,8 +63,8 @@ class ArmSceneInterface(Node):
         # end effector mode 0
         msg = TransformStamped()
         msg.transform.translation.x = 0.0
-        msg.transform.translation.y = -0.123
-        msg.transform.translation.z = 0.245
+        msg.transform.translation.y = -0.12
+        msg.transform.translation.z = 0.235
         msg.transform.rotation.x = 0.7010574
         msg.transform.rotation.y = 0.7010574
         msg.transform.rotation.z = -0.092296
@@ -79,8 +79,8 @@ class ArmSceneInterface(Node):
         # end effector mode 1
         msg = TransformStamped()
         msg.transform.translation.x = 0.0
-        msg.transform.translation.y = -0.123
-        msg.transform.translation.z = 0.245
+        msg.transform.translation.y = -0.12
+        msg.transform.translation.z = 0.235
         msg.transform.rotation.x = 0.7010574
         msg.transform.rotation.y = -0.7010574
         msg.transform.rotation.z = 0.092296
@@ -160,6 +160,61 @@ class ArmSceneInterface(Node):
             msg.object.header.stamp = self.get_clock().now().to_msg()
 
             self.attached_collision_object_publisher.publish(msg)
+
+        #add wall 1
+        msg = CollisionObject()
+        msg.header.frame_id = "world"
+        msg.id = 'wall_1'
+        
+        wall_1 = SolidPrimitive()
+        wall_1.type = SolidPrimitive.BOX
+        wall_1.dimensions = [1.83,0.0,2.0]
+        wall_1_pose = Pose()
+        wall_1_pose.position.x = 0.915 - self.cart_position
+        wall_1_pose.position.y = -1.12 + self.linear_actuator_position
+        wall_1_pose.position.z = 0.5
+        wall_1_pose.orientation.x = 0.0
+        wall_1_pose.orientation.y = 0.0
+        wall_1_pose.orientation.z = 0.0
+        wall_1_pose.orientation.w = 1.0
+
+        msg.primitives.append(wall_1)
+        msg.primitive_poses.append(wall_1_pose)
+
+        wall_2 = SolidPrimitive()
+        wall_2.type = SolidPrimitive.BOX
+        wall_2.dimensions = [0.0,2.0,2.0]
+        wall_2_pose = Pose()
+        wall_2_pose.position.x = 1.83 - self.cart_position
+        wall_2_pose.position.y = -0.12 + self.linear_actuator_position
+        wall_2_pose.position.z = 0.5
+        wall_2_pose.orientation.x = 0.0
+        wall_2_pose.orientation.y = 0.0
+        wall_2_pose.orientation.z = 0.0
+        wall_2_pose.orientation.w = 1.0
+
+        msg.primitives.append(wall_2)
+        msg.primitive_poses.append(wall_2_pose)
+
+        wall_3 = SolidPrimitive()
+        wall_3.type = SolidPrimitive.BOX
+        wall_3.dimensions = [0.0,2.0,2.0]
+        wall_3_pose = Pose()
+        wall_3_pose.position.x = -self.cart_position
+        wall_3_pose.position.y = -0.12 + self.linear_actuator_position
+        wall_3_pose.position.z = 0.5
+        wall_3_pose.orientation.x = 0.0
+        wall_3_pose.orientation.y = 0.0
+        wall_3_pose.orientation.z = 0.0
+        wall_3_pose.orientation.w = 1.0
+
+        msg.primitives.append(wall_3)
+        msg.primitive_poses.append(wall_3_pose)
+
+        msg.header.stamp = self.get_clock().now().to_msg()
+
+        self.collision_object_publisher.publish(msg)
+
 
         #add mobile platform
         msg = CollisionObject()

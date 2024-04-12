@@ -8,6 +8,8 @@ from std_msgs.msg import Float32, Bool
 from std_srvs.srv import Trigger
 from koppers_msgs.msg import CleaningRequest, PoseRequest
 from koppers_msgs.srv import CreosoteSegment
+from sensor_msgs.msg import PointCloud, ChannelFloat32
+from geometry_msgs.msg import Point32
 
 class MasterNode(Node):
 
@@ -22,6 +24,9 @@ class MasterNode(Node):
         self.move_subscriber = self.create_subscription(Bool, '/uf850_move_success', self.move_callback, 10)
         self.perception_client = self.create_client(Trigger, '/capture_image')
         self.segmentation_client = self.create_client(CreosoteSegment, '/creosote_segmentation')
+        self.point_cloud_subscriber = self.create_subscription(PointCloud, '/raw_creosote_point_cloud', self.point_cloud_callback, 10)
+        self.dirty_point_cloud_publisher = self.create_publisher(PointCloud, '/dirty_creosote_point_cloud', 10)
+        self.clean_point_cloud_publisher = self.create_publisher(PointCloud, '/clean_creosote_point_cloud', 10)
 
         self.update_scene()
 
@@ -29,6 +34,24 @@ class MasterNode(Node):
         self.cleaning_modes = np.array([0,0,0,1,1,1]).astype(int)
         self.squeegee_width = 0.15
         self.complete = False
+        self.dirty_point_cloud = []
+        self.clean_point_cloud = []
+
+    def point_cloud_callback(self, msg):
+        self.dirty_point_cloud = msg.points
+        self.clean_point_cloud = []
+
+    def update_point_clouds(self, x, y1, y2):
+        i = 0
+        y_min = min(y1,y2)
+        y_max = max(y1,y2)
+        while i < len(self.dirty_point_cloud):
+            point = self.dirty_point_cloud[i]
+            if point.x >= x - self.squeegee_width / 2 and point.x <= x + self.squeegee_width / 2 and point.y >= y_min and point.y <= y_max:
+                self.clean_point_cloud.append(point)
+                self.dirty_point_cloud = self.dirty_point_cloud[:i-1] + self.dirty_point_cloud[i+1:]
+            else:
+                i = i+1
 
     def update_scene(self):
         #move linear actuator and cart to desired position
@@ -101,6 +124,7 @@ class MasterNode(Node):
             # print(cleaning_request)
 
             self.clean_publisher.publish(cleaning_request)
+            self.update_point_clouds(self.cleaning_trajs[0,0,0], y_min, self.cleaning_trajs[0,1,1])
             self.cleaning_trajs = self.cleaning_trajs[1:,:,:]
             self.cleaning_modes = self.cleaning_modes[1:]
             print("cleaning segment...")

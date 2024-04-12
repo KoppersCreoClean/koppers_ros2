@@ -304,13 +304,13 @@ class ImageProcessor(Node):
     def __init__(self, camera='left'):
         super().__init__('image_processor')
         self.image_service = self.create_service(Trigger, '/capture_image', self.capture_image)
-        self.point_cloud_publisher = self.create_publisher(PointCloud, '/creosote_point_cloud', 10)
+        self.point_cloud_publisher = self.create_publisher(PointCloud, '/raw_creosote_point_cloud', 10)
         self.segmentation_service = self.create_service(CreosoteSegment, '/creosote_segmentation', self.creosote_segmentation_callback)
         self.timer = self.create_timer(0.1, self.publish_point_cloud)
         self.tf_buffer = Buffer()
         self.tf_listener = TransformListener(self.tf_buffer, self)
 
-        self.cap = cv2.VideoCapture(5)
+        self.cap = cv2.VideoCapture(4)
         self.cap.set(cv2.CAP_PROP_FRAME_WIDTH, 2560)
         self.cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 720)
         calibration_file = os.path.join(get_package_share_directory('koppers_perception'),'calibration/zed_calibration.conf')
