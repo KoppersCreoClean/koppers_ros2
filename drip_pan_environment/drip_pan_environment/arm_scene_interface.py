@@ -8,7 +8,7 @@ from rclpy.node import Node
 
 from std_msgs.msg import Float32
 from std_srvs.srv import Trigger
-from moveit_msgs.msg import CollisionObject, AttachedCollisionObject
+from moveit_msgs.msg import CollisionObject, AttachedCollisionObject, PlanningScene, AllowedCollisionEntry
 from shape_msgs.msg import SolidPrimitive, Plane, Mesh, MeshTriangle
 from geometry_msgs.msg import Pose, Point, Quaternion, TransformStamped
 import meshio
@@ -24,6 +24,8 @@ class ArmSceneInterface(Node):
         self.collision_object_publisher = self.create_publisher(CollisionObject, '/collision_object', 10)
         self.attached_collision_object_publisher = self.create_publisher(AttachedCollisionObject, '/attached_collision_object', 10)
         self.update_scene_server = self.create_service(Trigger, '/update_scene', self.update_scene_callback)
+        self.planning_scene_subscriber = self.create_subscription(PlanningScene, '/monitored_planning_scene', self.planning_scene_callback, 10)
+        self.planning_scene_publisher = self.create_publisher(PlanningScene, '/planning_scene', 10)
 
         self.tf_broadcaster_0 = StaticTransformBroadcaster(self)
         self.tf_broadcaster_1 = StaticTransformBroadcaster(self)
@@ -55,10 +57,36 @@ class ArmSceneInterface(Node):
         
         self.linear_actuator_position = 0.0
         self.cart_position = 0.0
+        self.collision_matrix_needs_update = False
 
         self.publish_ee_transforms()
         self.publish_scene_objects(update_tool=True)
 
+    def planning_scene_callback(self, msg):
+        if self.collision_matrix_needs_update:
+            self.update_allowed_collision_matrix(msg)
+            self.collision_matrix_needs_update = False
+
+    def update_allowed_collision_matrix(self, msg):
+        self.latest_planning_scene = msg
+        self.latest_planning_scene.allowed_collision_matrix.entry_names = ['link1', 'link2', 'link3', 'link4', 'link5', 'link6', 'link_base', 'link_eef', 'cleaning_tool', 'squeegee', 'walls', 'robot_chassis', self.cad_namespace + '0']
+        self.latest_planning_scene.allowed_collision_matrix.entry_values = []                                 #link1, link2, link3, link4, link5, link6, base, eef, tool, squee, walls, chass, pan
+        self.latest_planning_scene.allowed_collision_matrix.entry_values.append(AllowedCollisionEntry(enabled=[False, True, True, False, False, False, True, False, False, False, True, False, False]))    #link1
+        self.latest_planning_scene.allowed_collision_matrix.entry_values.append(AllowedCollisionEntry(enabled=[True, False, True, True, False, False, True, False, False, False, True, False, False]))     #link2
+        self.latest_planning_scene.allowed_collision_matrix.entry_values.append(AllowedCollisionEntry(enabled=[True, True, False, True, True, True, False, False, False, False, True, False, False]))      #link3
+        self.latest_planning_scene.allowed_collision_matrix.entry_values.append(AllowedCollisionEntry(enabled=[False, True, True, False, True, True, False, False, False, False, True, False, False]))     #link4
+        self.latest_planning_scene.allowed_collision_matrix.entry_values.append(AllowedCollisionEntry(enabled=[False, False, True, True, False, True, False, False, False, False, True, False, False]))    #link5
+        self.latest_planning_scene.allowed_collision_matrix.entry_values.append(AllowedCollisionEntry(enabled=[False, False, True, True, True, False, False, True, True, False, True, False, False]))      #link6
+        self.latest_planning_scene.allowed_collision_matrix.entry_values.append(AllowedCollisionEntry(enabled=[True, True, False, False, False, False, False, False, False, False, True, False, False]))   #link_base
+        self.latest_planning_scene.allowed_collision_matrix.entry_values.append(AllowedCollisionEntry(enabled=[False, False, False, False, False, True, False, False, True, False, True, False, False]))   #link_eef
+        self.latest_planning_scene.allowed_collision_matrix.entry_values.append(AllowedCollisionEntry(enabled=[False, False, False, False, False, True, False, True, False, True, True, False, False]))  #cleaning_tool
+        self.latest_planning_scene.allowed_collision_matrix.entry_values.append(AllowedCollisionEntry(enabled=[False, False, False, False, False, False, False, False, True, False, False, False, True]))  #squeegee
+        self.latest_planning_scene.allowed_collision_matrix.entry_values.append(AllowedCollisionEntry(enabled=[True, True, True, True, True, True, True, True, True, False, False, True, True]))           #walls
+        self.latest_planning_scene.allowed_collision_matrix.entry_values.append(AllowedCollisionEntry(enabled=[False, False, False, False, False, False, False, False, False, False, True, False, True]))  #robot_chassis
+        self.latest_planning_scene.allowed_collision_matrix.entry_values.append(AllowedCollisionEntry(enabled=[False, False, False, False, False, False, False, False, False, True, True, True, False]))  #drip pan
+        self.planning_scene_publisher.publish(self.latest_planning_scene)
+        self.get_logger().info('allowed collision matrix updated')
+    
     def publish_ee_transforms(self):
         # end effector mode 0
         msg = TransformStamped()
@@ -95,8 +123,8 @@ class ArmSceneInterface(Node):
         # left camera
         msg = TransformStamped()
         msg.transform.translation.x = 0.06
-        msg.transform.translation.y = 0.055
-        msg.transform.translation.z = 0.02
+        msg.transform.translation.y = 0.05
+        msg.transform.translation.z = 0.037
         msg.transform.rotation.x = 0.0
         msg.transform.rotation.y = 0.7071068
         msg.transform.rotation.z = 0.7071068
@@ -111,8 +139,8 @@ class ArmSceneInterface(Node):
         # right camera
         msg = TransformStamped()
         msg.transform.translation.x = -0.06
-        msg.transform.translation.y = 0.055
-        msg.transform.translation.z = 0.02
+        msg.transform.translation.y = 0.05
+        msg.transform.translation.z = 0.037
         msg.transform.rotation.x = 0.0
         msg.transform.rotation.y = 0.7071068
         msg.transform.rotation.z = 0.7071068
@@ -132,6 +160,8 @@ class ArmSceneInterface(Node):
         self.linear_actuator_position = msg.data
 
     def publish_scene_objects(self, update_tool=False):
+
+        # planning_scene_msg = self.latest_planning_scene
         
         if update_tool:
             #add cleaning tool
@@ -159,19 +189,54 @@ class ArmSceneInterface(Node):
 
             msg.object.header.stamp = self.get_clock().now().to_msg()
 
+            # planning_scene_msg.robot_state.attached_collision_objects.append(msg)
+            # planning_scene_msg.allowed_collision_matrix.entry_names.append('cleaning_tool')
+            # planning_scene_msg.allowed_collision_matrix.entry_values.append()
+
             self.attached_collision_object_publisher.publish(msg)
 
-        #add wall 1
+            #add squeegee
+            msg = AttachedCollisionObject()
+            msg.link_name = "link6"
+            msg.object.pose.position.x = 0.228  #0.238
+            msg.object.pose.position.y = 0.136  #0.138
+            msg.object.pose.position.z = 0.30   #0.286
+            msg.object.pose.orientation.x = 0.0
+            msg.object.pose.orientation.y = -0.7071068
+            msg.object.pose.orientation.z = 0.7071068
+            msg.object.pose.orientation.w = 0.0
+            msg.object.id = "squeegee"
+            msg.touch_links = ["link6"]
+
+            raw_mesh = meshio.read(os.path.join(self.stl_directory,'squeegee.STL'))
+            moveit_mesh = Mesh()
+
+            for p in raw_mesh.points:
+                moveit_mesh.vertices.append(Point(x=p[0]*self.stl_scale,y=p[1]*self.stl_scale,z=p[2]*self.stl_scale))
+            for v in raw_mesh.cells_dict['triangle']:
+                moveit_mesh.triangles.append(MeshTriangle(vertex_indices=v))
+            msg.object.meshes = [moveit_mesh]
+            msg.object.operation = bytes([0])
+
+            msg.object.header.stamp = self.get_clock().now().to_msg()
+
+            # planning_scene_msg.robot_state.attached_collision_objects.append(msg)
+            # planning_scene_msg.allowed_collision_matrix.entry_names.append('cleaning_tool')
+            # planning_scene_msg.allowed_collision_matrix.entry_values.append()
+
+            self.attached_collision_object_publisher.publish(msg)
+
+        #add walls
         msg = CollisionObject()
         msg.header.frame_id = "world"
-        msg.id = 'wall_1'
+        msg.id = 'walls'
         
         wall_1 = SolidPrimitive()
         wall_1.type = SolidPrimitive.BOX
-        wall_1.dimensions = [1.83,0.0,2.0]
+        wall_1.dimensions = [1.83,0.01,2.0]
         wall_1_pose = Pose()
         wall_1_pose.position.x = 0.915 - self.cart_position
-        wall_1_pose.position.y = -1.12 + self.linear_actuator_position
+        wall_1_pose.position.y = -1.11 + self.linear_actuator_position
         wall_1_pose.position.z = 0.5
         wall_1_pose.orientation.x = 0.0
         wall_1_pose.orientation.y = 0.0
@@ -183,9 +248,9 @@ class ArmSceneInterface(Node):
 
         wall_2 = SolidPrimitive()
         wall_2.type = SolidPrimitive.BOX
-        wall_2.dimensions = [0.0,2.0,2.0]
+        wall_2.dimensions = [0.01,2.0,2.0]
         wall_2_pose = Pose()
-        wall_2_pose.position.x = 1.83 - self.cart_position
+        wall_2_pose.position.x = 1.84 - self.cart_position
         wall_2_pose.position.y = -0.12 + self.linear_actuator_position
         wall_2_pose.position.z = 0.5
         wall_2_pose.orientation.x = 0.0
@@ -198,9 +263,9 @@ class ArmSceneInterface(Node):
 
         wall_3 = SolidPrimitive()
         wall_3.type = SolidPrimitive.BOX
-        wall_3.dimensions = [0.0,2.0,2.0]
+        wall_3.dimensions = [0.01,2.0,2.0]
         wall_3_pose = Pose()
-        wall_3_pose.position.x = -self.cart_position
+        wall_3_pose.position.x = -0.01 - self.cart_position
         wall_3_pose.position.y = -0.12 + self.linear_actuator_position
         wall_3_pose.position.z = 0.5
         wall_3_pose.orientation.x = 0.0
@@ -213,8 +278,9 @@ class ArmSceneInterface(Node):
 
         msg.header.stamp = self.get_clock().now().to_msg()
 
-        self.collision_object_publisher.publish(msg)
+        # planning_scene_msg.world.collision_objects.append(msg)
 
+        self.collision_object_publisher.publish(msg)
 
         #add mobile platform
         msg = CollisionObject()
@@ -240,6 +306,8 @@ class ArmSceneInterface(Node):
         msg.operation = bytes([0])
 
         msg.header.stamp = self.get_clock().now().to_msg()
+
+        # planning_scene_msg.world.collision_objects.append(msg)
 
         self.collision_object_publisher.publish(msg)
 
@@ -272,6 +340,8 @@ class ArmSceneInterface(Node):
 
                 msg.header.stamp = self.get_clock().now().to_msg()
 
+                # planning_scene_msg.world.collision_objects.append(msg)
+
                 self.collision_object_publisher.publish(msg)
 
                 self.active_sections[i] = True
@@ -284,7 +354,12 @@ class ArmSceneInterface(Node):
 
                 msg.header.stamp = self.get_clock().now().to_msg()
 
+                # planning_scene_msg.world.collision_objects.append(msg)
+
                 self.collision_object_publisher.publish(msg)
+
+        # self.planning_scene_publisher.publish(planning_scene_msg)
+        self.collision_matrix_needs_update = True
         return True
 
     def update_scene_callback(self, request, response):

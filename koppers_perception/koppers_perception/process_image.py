@@ -130,8 +130,8 @@ class creoSegmenter:
         clean_region = cv2.inRange(image, int(thresholds[1]), 255)
         if visualize:
             cv2.imshow("Creo Region", creo_region)
-            cv2.imshow("Semi Creo Region", semi_creo_region)
-            cv2.imshow("Clean Region", clean_region)
+            # cv2.imshow("Semi Creo Region", semi_creo_region)
+            # cv2.imshow("Clean Region", clean_region)
             cv2.waitKey(0)
             cv2.destroyAllWindows()
         return creo_region, semi_creo_region, clean_region
@@ -230,39 +230,90 @@ class creoSegmenter:
         cameraMatrix_right = P2
 
         return cameraMatrix_left, cameraMatrix_right, map_left_x, map_left_y, map_right_x, map_right_y
+    
+    def init_pre_calibrated(self, calibration_file, image_size):
+        config = configparser.ConfigParser()
+        config.read(calibration_file)
+
+        check_data = True
+        resolution_str = ''
+        if image_size.width == 2208 :
+            resolution_str = '2K'
+        elif image_size.width == 1920 :
+            resolution_str = 'FHD'
+        elif image_size.width == 1280 :
+            resolution_str = 'HD'
+        elif image_size.width == 672 :
+            resolution_str = 'VGA'
+        else:
+            resolution_str = 'HD'
+            check_data = False
+
+        T_ = np.array([-float(config['STEREO']['Baseline'] if 'Baseline' in config['STEREO'] else 0),
+                    float(config['STEREO']['TY_'+resolution_str] if 'TY_'+resolution_str in config['STEREO'] else 0),
+                    float(config['STEREO']['TZ_'+resolution_str] if 'TZ_'+resolution_str in config['STEREO'] else 0)])
 
 
-    # get location of the top/left most pixel of the creo region and translate to real world coordinates
-    def get_creo_locations(self, image, camera): # no intrinsic matrix because we need coords in camera frame
+        left_cam_cx = float(config['LEFT_CAM_'+resolution_str]['cx'] if 'cx' in config['LEFT_CAM_'+resolution_str] else 0)
+        left_cam_cy = float(config['LEFT_CAM_'+resolution_str]['cy'] if 'cy' in config['LEFT_CAM_'+resolution_str] else 0)
+        left_cam_fx = float(config['LEFT_CAM_'+resolution_str]['fx'] if 'fx' in config['LEFT_CAM_'+resolution_str] else 0)
+        left_cam_fy = float(config['LEFT_CAM_'+resolution_str]['fy'] if 'fy' in config['LEFT_CAM_'+resolution_str] else 0)
 
+
+        right_cam_cx = float(config['RIGHT_CAM_'+resolution_str]['cx'] if 'cx' in config['RIGHT_CAM_'+resolution_str] else 0)
+        right_cam_cy = float(config['RIGHT_CAM_'+resolution_str]['cy'] if 'cy' in config['RIGHT_CAM_'+resolution_str] else 0)
+        right_cam_fx = float(config['RIGHT_CAM_'+resolution_str]['fx'] if 'fx' in config['RIGHT_CAM_'+resolution_str] else 0)
+        right_cam_fy = float(config['RIGHT_CAM_'+resolution_str]['fy'] if 'fy' in config['RIGHT_CAM_'+resolution_str] else 0)
+
+
+        cameraMatrix_left = np.array([[left_cam_fx, 0, left_cam_cx],
+                            [0, left_cam_fy, left_cam_cy],
+                            [0, 0, 1]])
+
+        cameraMatrix_right = np.array([[right_cam_fx, 0, right_cam_cx],
+                            [0, right_cam_fy, right_cam_cy],
+                            [0, 0, 1]])
+        
+        return cameraMatrix_left, cameraMatrix_right
+
+    def get_camera_matrix(self, image, camera, dewarp):
         image_size = Resolution()
         image_size.width = 1280
         image_size.height = 720
-
-        camera_matrix_left, camera_matrix_right, map_left_x, map_left_y, map_right_x, map_right_y = self.init_calibration(self.calibration_file, image_size)
-        camera_matrix = None
-
-        # cv2.imshow("raw", image)
-
-        left_right_image = np.split(image, 2, axis=1)
-
-        if camera == 'left':
-            image = cv2.remap(left_right_image[0], map_left_x, map_left_y, interpolation=cv2.INTER_LINEAR)
-            camera_matrix = camera_matrix_left
+        
+        if dewarp:
+            camera_matrix_left, camera_matrix_right, map_left_x, map_left_y, map_right_x, map_right_y = self.init_calibration(self.calibration_file, image_size)
+            
+            left_right_image = np.split(image, 2, axis=1)
+            if camera == 'left':
+                image = cv2.remap(left_right_image[0], map_left_x, map_left_y, interpolation=cv2.INTER_LINEAR)
+                camera_matrix = camera_matrix_left
+            else:
+                image = cv2.remap(left_right_image[1], map_right_x, map_right_y, interpolation=cv2.INTER_LINEAR)
+                camera_matrix = camera_matrix_right
         else:
-            image = cv2.remap(left_right_image[1], map_right_x, map_right_y, interpolation=cv2.INTER_LINEAR)
-            camera_matrix = camera_matrix_right
+            camera_matrix_left, camera_matrix_right = self.init_pre_calibrated(self.calibration_file, image_size)
 
-        # print(camera_matrix)
-        # print(image.shape)
+            if camera == 'left':
+                camera_matrix = camera_matrix_left
+            else:
+                camera_matrix = camera_matrix_right
+        
+        return image, camera_matrix
 
-        # cv2.imshow("de-distorted", image)
+    # get location of the top/left most pixel of the creo region and translate to real world coordinates
+    def get_creo_locations(self, image, camera, dewarp=True): # no intrinsic matrix because we need coords in camera frame
+
+        image, camera_matrix = self.get_camera_matrix(image, camera, dewarp)
+
+        cv2.imshow("de-distorted", image)
+        # cv2.imwrite("testbed_image_7.jpg", image)
         # cv2.waitKey(0)
 
         #segment the image,
         image = self.preprocess_image(image)
         # cv2.imshow("pre-processed", image)
-        creo_region, _, _ = self.multi_otsu_thresholding(image, visualize=False)
+        creo_region, _, _ = self.multi_otsu_thresholding(image, visualize=True)
         
         #get only creosote_locations
         creo_locations = np.where(creo_region == 255)
@@ -306,22 +357,35 @@ class ImageProcessor(Node):
         self.image_service = self.create_service(Trigger, '/capture_image', self.capture_image)
         self.point_cloud_publisher = self.create_publisher(PointCloud, '/raw_creosote_point_cloud', 10)
         self.segmentation_service = self.create_service(CreosoteSegment, '/creosote_segmentation', self.creosote_segmentation_callback)
-        self.timer = self.create_timer(0.1, self.publish_point_cloud)
+        # self.timer = self.create_timer(0.1, self.publish_point_cloud)
         self.tf_buffer = Buffer()
         self.tf_listener = TransformListener(self.tf_buffer, self)
-
-        self.cap = cv2.VideoCapture(4)
-        self.cap.set(cv2.CAP_PROP_FRAME_WIDTH, 2560)
-        self.cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 720)
+        
+        try:
+            self.cap = cv2.VideoCapture(4)
+            if self.cap is None or not self.cap.isOpened():
+                raise ConnectionError
+            self.cap.set(cv2.CAP_PROP_FRAME_WIDTH, 2560)
+            self.cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 720)
+            self.camera_found = True
+            self.get_logger().info('Camera Found', once=True)
+        except ConnectionError:
+            self.get_logger().info('No Camera Found', once=True)
+            self.camera_found = False
+        
         calibration_file = os.path.join(get_package_share_directory('koppers_perception'),'calibration/zed_calibration.conf')
         self.segmenter = creoSegmenter(calibration_file)
         self.camera = camera
         self.base_scaled_locations = None
 
     def capture_image(self, request, response):
-        retval, frame = self.cap.read()
 
-        camera_locations = self.segmenter.get_creo_locations(frame, camera=self.camera)
+        if self.camera_found:
+            retval, frame = self.cap.read()
+            camera_locations = self.segmenter.get_creo_locations(frame, camera=self.camera, dewarp=True)
+        else:
+            frame = cv2.imread("testbed_image_8.jpg")
+            camera_locations = self.segmenter.get_creo_locations(frame, camera=self.camera, dewarp=False)
 
         T = self.tf_buffer.lookup_transform('link_base', self.camera + '_camera', rclpy.time.Time())
         R = quaternion.as_rotation_matrix(quaternion.as_quat_array(np.array([T.transform.rotation.w,T.transform.rotation.x,T.transform.rotation.y,T.transform.rotation.z])))
@@ -338,20 +402,21 @@ class ImageProcessor(Node):
 
         self.base_scaled_locations = T @ camera_scaled_locations
 
+        self.publish_point_cloud()
+
         response.success = True
         return response
     
     def publish_point_cloud(self):
-        if self.base_scaled_locations is not None:
-            point_cloud_msg = PointCloud()
-            point_cloud_msg.header.stamp = self.get_clock().now().to_msg()
-            point_cloud_msg.header.frame_id = 'link_base'
+        point_cloud_msg = PointCloud()
+        point_cloud_msg.header.stamp = self.get_clock().now().to_msg()
+        point_cloud_msg.header.frame_id = 'link_base'
 
-            for i in range(self.base_scaled_locations.shape[1]):
-                point_cloud_msg.points.append(Point32(x=self.base_scaled_locations[0,i],y=self.base_scaled_locations[1,i],z=self.base_scaled_locations[2,i]))
-                point_cloud_msg.channels.append(ChannelFloat32(name="rgb",values=[0,0,255]))
+        for i in range(self.base_scaled_locations.shape[1]):
+            point_cloud_msg.points.append(Point32(x=self.base_scaled_locations[0,i],y=self.base_scaled_locations[1,i],z=self.base_scaled_locations[2,i]))
+            point_cloud_msg.channels.append(ChannelFloat32(name="rgb",values=[0,0,255]))
 
-            self.point_cloud_publisher.publish(point_cloud_msg)
+        self.point_cloud_publisher.publish(point_cloud_msg)
 
     def creosote_segmentation_callback(self, request, response):
         x_min = request.x_min

@@ -8,7 +8,6 @@ from uf850_control.robot_library.kinematics import SerialArm
 from uf850_control.robot_library.transforms import *
 
 from std_msgs.msg import Bool
-from sensor_msgs.msg import JointState
 from geometry_msgs.msg import Pose
 from xarm_msgs.srv import PlanJoint, PlanExec, PlanPose, PlanSingleStraight
 from koppers_msgs.msg import CleaningRequest, PoseRequest
@@ -22,6 +21,7 @@ class State(Enum):
     START_CLEAN = auto()
     MAIN_CLEAN = auto()
     STOP_CLEAN = auto()
+    RETRACT_CLEAN = auto()
     MOVE_CALLBACK = auto()
     MOVE = auto()
 
@@ -30,6 +30,7 @@ class UF850Mover(Node):
     def __init__(self):
         super().__init__('uf850_mover')
         self.joint_plan_client = self.create_client(PlanJoint, '/xarm_joint_plan')
+        self.pose_plan_client = self.create_client(PlanPose, '/xarm_pose_plan')
         self.straight_plan_client = self.create_client(PlanSingleStraight, '/xarm_straight_plan')
         self.exec_plan_client = self.create_client(PlanExec, '/xarm_exec_plan')
         self.clean_subscriber = self.create_subscription(CleaningRequest, '/uf850_clean', self.clean_callback, 10)
@@ -53,7 +54,7 @@ class UF850Mover(Node):
         self.cleaning_trajs = None
         self.orientation = None
 
-    def ik_uf850(self, target_position, target_rotation):
+    def ik_uf850(self, target_position, target_rotation, mode=0):
         position = target_position
 
         q = np.zeros(6)
@@ -75,7 +76,7 @@ class UF850Mover(Node):
 
         R_diff = raw_rotation.T @ target_rotation
 
-        if(abs(np.arctan2(R_diff[1,2], R_diff[0,2])) < abs(np.arctan2(-R_diff[1,2], -R_diff[0,2]))):
+        if(mode == 0 and np.round(np.cos(q[0]),5) <= 0) or (mode == 1 and np.round(np.cos(q[0]),5) > 0):
             q[3] = np.arctan2(R_diff[1,2], R_diff[0,2])
             q[4] = np.arctan2(np.sqrt(R_diff[1,2]**2 + R_diff[0,2]**2), R_diff[2,2])
             q[5] = np.arctan2(R_diff[2,1], -R_diff[2,0])
@@ -111,13 +112,27 @@ class UF850Mover(Node):
 
         pre_clean_position = self.start_position + self.cleaning_plane_orientation @ (self.pre_clean_offset + t_ee_6)
         pre_clean_orientation = self.cleaning_plane_orientation @ R_ee_6
+        # pre_clean_orientation = quaternion.from_rotation_matrix(self.cleaning_plane_orientation @ R_ee_6)
 
-        q = self.ik_uf850(pre_clean_position, pre_clean_orientation)
+        q = self.ik_uf850(pre_clean_position, pre_clean_orientation, mode=self.mode)
 
         joint_request = PlanJoint.Request()
         joint_request.target = q.tolist()
         pre_clean_plan = self.joint_plan_client.call_async(joint_request)
         pre_clean_plan.add_done_callback(self.moveit_callback)
+
+        # pose_request = PlanPose.Request()
+        # pose_request.target.position.x = pre_clean_position[0]
+        # pose_request.target.position.y = pre_clean_position[1]
+        # pose_request.target.position.z = pre_clean_position[2]
+        # pose_request.target.orientation.x = pre_clean_orientation.x
+        # pose_request.target.orientation.y = pre_clean_orientation.y
+        # pose_request.target.orientation.z = pre_clean_orientation.z
+        # pose_request.target.orientation.w = pre_clean_orientation.w
+
+        # pre_clean_plan = self.pose_plan_client.call_async(pose_request)
+        # pre_clean_plan.add_done_callback(self.moveit_callback)
+
 
     def plan_start_clean(self):
         self.state = State.START_CLEAN
@@ -188,6 +203,29 @@ class UF850Mover(Node):
         plan_future = self.straight_plan_client.call_async(straight_path_request)
         plan_future.add_done_callback(self.moveit_callback)
 
+    def plan_retract_clean(self):
+        self.state = State.RETRACT_CLEAN
+        self.get_logger().info("In state " + str(self.state) + ", mode: " + str(self.mode))
+
+        R_ee_6, t_ee_6 = self.get_transform('ee_mode_' + str(self.mode), 'link6')
+
+        pre_clean_position = self.start_position + self.cleaning_plane_orientation @ (self.pre_clean_offset + t_ee_6)
+        pre_clean_orientation = quaternion.from_rotation_matrix(self.cleaning_plane_orientation @ R_ee_6)
+
+        straight_path_request = PlanSingleStraight.Request()
+        pre_clean_pose = Pose()
+        pre_clean_pose.position.x = pre_clean_position[0]
+        pre_clean_pose.position.y = pre_clean_position[1]
+        pre_clean_pose.position.z = pre_clean_position[2]
+        pre_clean_pose.orientation.x = pre_clean_orientation.x
+        pre_clean_pose.orientation.y = pre_clean_orientation.y
+        pre_clean_pose.orientation.z = pre_clean_orientation.z
+        pre_clean_pose.orientation.w = pre_clean_orientation.w
+
+        straight_path_request.target = [pre_clean_pose]
+        plan_future = self.straight_plan_client.call_async(straight_path_request)
+        plan_future.add_done_callback(self.moveit_callback)
+
     def move_callback(self, msg):
         self.state = State.MOVE_CALLBACK
         self.get_logger().info("In state " + str(self.state))
@@ -245,6 +283,11 @@ class UF850Mover(Node):
                     case State.MAIN_CLEAN:
                         self.plan_stop_clean()
                     case State.STOP_CLEAN:
+                        if self.mode == 0:
+                            self.clean_request_finished(True)
+                        else:
+                            self.plan_retract_clean()
+                    case State.RETRACT_CLEAN:
                         self.clean_request_finished(True)
                     case State.MOVE:
                         self.move_request_finished(True)
@@ -264,6 +307,8 @@ class UF850Mover(Node):
                         self.plan_main_clean()
                     case State.STOP_CLEAN:
                         self.plan_stop_clean()
+                    case State.RETRACT_CLEAN:
+                        self.plan_retract_clean()
                     case State.MOVE:
                         self.plan_move()
             else:
