@@ -11,10 +11,9 @@ import quaternion
 import skimage
 from skimage.filters import threshold_multiotsu
 
-from std_srvs.srv import Trigger
 from tf2_ros.buffer import Buffer
 from tf2_ros.transform_listener import TransformListener
-from koppers_msgs.srv import CreosoteSegment
+from koppers_msgs.srv import CreosoteSegment, CreosoteImage
 from sensor_msgs.msg import PointCloud, ChannelFloat32
 from geometry_msgs.msg import Point32
 
@@ -31,7 +30,7 @@ class creoSegmenter:
                  creo_threshold=50, # threshold for semi (grey) pixels
                  clean_threshold=170, # threshold for clean (white) pixels
                  kernel_size=5, # kernel size for dilation and erosion [5/3]
-                 kernel_iterations=3): # number of iterations for dilation and erosion [5/3/1]
+                 kernel_iterations=7): # number of iterations for dilation and erosion [5/3/1]
         
         self.operation = operation
         self.segmentation_method = segmentation_method
@@ -54,6 +53,7 @@ class creoSegmenter:
     def preprocess_image(self, img, if_mask=False):
         if len(img.shape) == 3 and if_mask == False:
             img = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+        # img = img[0:720,300:1000]
         # img = cv2.resize(img, (600, 1000))
         if not if_mask:
             img = self.erode_image(img)
@@ -300,23 +300,42 @@ class creoSegmenter:
                 camera_matrix = camera_matrix_right
         
         return image, camera_matrix
+    
+    # fill the contours in the image
+    def fill_contours(self, img):
+        img = self.dilate_image(img)
+        cnts = cv2.findContours(img, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+        cnts = cnts[0] if len(cnts) == 2 else cnts[1]
+        for c in cnts:
+            cv2.drawContours(img,[c], 0, (255,255,255), -1)
+        kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (20,20))
+        opening = cv2.morphologyEx(img, cv2.MORPH_OPEN, kernel, iterations=1)
+        return opening
 
     # get location of the top/left most pixel of the creo region and translate to real world coordinates
     def get_creo_locations(self, image, camera, dewarp=True): # no intrinsic matrix because we need coords in camera frame
 
         image, camera_matrix = self.get_camera_matrix(image, camera, dewarp)
 
-        cv2.imshow("de-distorted", image)
+        cv2.imshow("Camera Image", image[0:720,400:1000])
         # cv2.imwrite("testbed_image_7.jpg", image)
         # cv2.waitKey(0)
 
         #segment the image,
         image = self.preprocess_image(image)
         # cv2.imshow("pre-processed", image)
-        creo_region, _, _ = self.multi_otsu_thresholding(image, visualize=True)
+        creo_region, semi_creo_region, _ = self.multi_otsu_thresholding(image, visualize=False)
         
         #get only creosote_locations
-        creo_locations = np.where(creo_region == 255)
+        total_creo_region = creo_region
+        # total_creo_region = cv2.bitwise_or(creo_region, semi_creo_region)
+        filled_creo_region = self.fill_contours(total_creo_region)
+
+        cv2.imshow("Creosote Segmentation", filled_creo_region[0:720,400:1000])
+        cv2.waitKey(0)
+        cv2.destroyAllWindows()
+
+        creo_locations = np.where(total_creo_region > 0)
 
         # print(np.linalg.inv(camera_matrix[:,0:3]))
 
@@ -354,7 +373,7 @@ class creoSegmenter:
 class ImageProcessor(Node):
     def __init__(self, camera='left'):
         super().__init__('image_processor')
-        self.image_service = self.create_service(Trigger, '/capture_image', self.capture_image)
+        self.image_service = self.create_service(CreosoteImage, '/capture_image', self.capture_image)
         self.point_cloud_publisher = self.create_publisher(PointCloud, '/raw_creosote_point_cloud', 10)
         self.segmentation_service = self.create_service(CreosoteSegment, '/creosote_segmentation', self.creosote_segmentation_callback)
         # self.timer = self.create_timer(0.1, self.publish_point_cloud)
@@ -379,6 +398,10 @@ class ImageProcessor(Node):
         self.base_scaled_locations = None
 
     def capture_image(self, request, response):
+        x_min = request.x_min
+        x_max = request.x_max
+        y_min = request.y_min
+        y_max = request.y_max
 
         if self.camera_found:
             retval, frame = self.cap.read()
@@ -401,7 +424,10 @@ class ImageProcessor(Node):
 
 
         self.base_scaled_locations = T @ camera_scaled_locations
-
+        locations = np.where(np.logical_and(np.logical_and(np.logical_and(self.base_scaled_locations[0,:] > x_min, self.base_scaled_locations[0,:] < x_max), self.base_scaled_locations[1,:] > y_min), self.base_scaled_locations[1,:] < y_max))
+        self.get_logger().info(f'{self.base_scaled_locations.shape}')
+        self.base_scaled_locations = self.base_scaled_locations[:,locations].squeeze()
+        self.get_logger().info(f'{self.base_scaled_locations.shape}')
         self.publish_point_cloud()
 
         response.success = True
@@ -411,10 +437,14 @@ class ImageProcessor(Node):
         point_cloud_msg = PointCloud()
         point_cloud_msg.header.stamp = self.get_clock().now().to_msg()
         point_cloud_msg.header.frame_id = 'link_base'
-
+        i = 0
         for i in range(self.base_scaled_locations.shape[1]):
-            point_cloud_msg.points.append(Point32(x=self.base_scaled_locations[0,i],y=self.base_scaled_locations[1,i],z=self.base_scaled_locations[2,i]))
-            point_cloud_msg.channels.append(ChannelFloat32(name="rgb",values=[0,0,255]))
+            x = self.base_scaled_locations[0,i]
+            y = self.base_scaled_locations[1,i]
+            z = self.base_scaled_locations[2,i]
+            # if(x < self.x_max and x > self.x_min and y < self.y_max and y > self.y_min):
+            point_cloud_msg.points.append(Point32(x=x,y=y,z=z))
+            point_cloud_msg.channels.append(ChannelFloat32(name="rgb",values=[0,0,0]))
 
         self.point_cloud_publisher.publish(point_cloud_msg)
 
@@ -426,6 +456,7 @@ class ImageProcessor(Node):
 
         if self.base_scaled_locations is not None:
             locations = np.where(np.logical_and(np.logical_and(np.logical_and(self.base_scaled_locations[0,:] > x_min, self.base_scaled_locations[0,:] < x_max), self.base_scaled_locations[1,:] > y_min), self.base_scaled_locations[1,:] < y_max))
+            # self.get_logger().info(f'{locations}')
             if len(locations[0]) > 0:
                 response.y_min_result = np.min(self.base_scaled_locations[1,locations])
                 response.y_max_result = np.max(self.base_scaled_locations[1,locations])

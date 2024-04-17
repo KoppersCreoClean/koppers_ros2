@@ -41,6 +41,7 @@ rosidl_generate_interfaces(${PROJECT_NAME}
   "msg/PoseRequest.msg"
   "msg/RectangularCleanArea.msg"
   "srv/CreosoteSegment.srv"
+  "srv/CreosoteImage.srv"
   DEPENDENCIES geometry_msgs
 )
 
