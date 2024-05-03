@@ -1,3 +1,14 @@
+"""
+Team: Carnegie Mellon MRSD Team A: CreoClean
+Members: David Hill, Louis Plottel, Leonardo Mouta, Michael Gromis, Yatharth Ahuja
+
+File: process_image.py
+Main Author: Yatharth Ahuja, David Hill
+Date: 2024-04-04
+
+Description: ROS2 node for processing images from the camera and segmenting the creosote.
+"""
+
 import os
 from ament_index_python.packages import get_package_share_directory
 import rclpy
@@ -22,6 +33,9 @@ class Resolution :
     height = 720
 
 class creoSegmenter:
+    """
+    Class to segment the image into creo, semi, and clean regions
+    """
 
     def __init__(self,
                  calibration_file,
@@ -43,14 +57,23 @@ class creoSegmenter:
         
     # Dilation of image 
     def dilate_image(self, image):
+        """
+        Dilate the image using the kernel and number of iterations
+        """
         return cv2.dilate(image, self.kernel, iterations=self.kernel_iterations)
 
     # Erosion of image 
     def erode_image(self, image):
+        """
+        Erode the image using the kernel and number of iterations
+        """
         return cv2.erode(image, self.kernel, iterations=3)
     
     # preprocess the image/mask
     def preprocess_image(self, img, if_mask=False):
+        """
+        Preprocess the image/mask by converting to grayscale and eroding
+        """
         if len(img.shape) == 3 and if_mask == False:
             img = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
         # img = img[0:720,300:1000]
@@ -59,7 +82,10 @@ class creoSegmenter:
             img = self.erode_image(img)
         return img
     
-    def remove_shadows(self, img):    
+    def remove_shadows(self, img):
+        """
+        Remove shadows from the image
+        """
         rgb_planes = cv2.split(img)
 
         result_planes = []
@@ -79,6 +105,9 @@ class creoSegmenter:
     
     # find true positives, false positives, and false negatives in two binary images
     def segmentation_confusion_matrix(self, bin1, bin2):
+        """
+        Segmentation confusion matrix to get true positives, true negatives, false positives, and false negatives
+        """
         true_positives = np.sum(np.logical_and(bin1 == 255, bin2 == 255))
         true_negatives = np.sum(np.logical_and(bin1 == 0, bin2 == 0))
         false_positives = np.sum(np.logical_and(bin1 == 255, bin2 == 0))
@@ -87,6 +116,9 @@ class creoSegmenter:
     
     # create binary masks for creo (red), semi (green), and clean (blue) regions for evaluation
     def get_masks(self, mask):
+        """
+        Get the binary masks for the creo, semi, and clean regions
+        """
         # apply thresholding to the channels to get the binary masks
         red_channel = mask[:, :, 2]
         _, binary_creo_mask = cv2.threshold(red_channel, 250, 255, cv2.THRESH_BINARY)
@@ -98,6 +130,9 @@ class creoSegmenter:
         
     # apply the bw thresholding to the image to get the different regions
     def bw_thresholding_image(self, image, visualize=False):
+        """
+        Black and white thresholding to get the creo, semi, and clean regions
+        """
         creo_region = cv2.inRange(image, 0, self.creo_threshold)
         semi_creo_region = cv2.inRange(image, self.creo_threshold, self.clean_threshold)
         clean_region = cv2.inRange(image, self.clean_threshold, 255)
@@ -111,11 +146,17 @@ class creoSegmenter:
     
     # apply the otus thresholding to the image
     def otu_thresholding(self, image):
+        """
+        Otsu thresholding to get the binary mask
+        """
         image = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
         _, thresholded = cv2.threshold(image, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
         return thresholded
     
     def multi_otsu_thresholding(self, image, visualize=False):
+        """
+        Multi-Otsu thresholding to get the creo, semi, and clean regions
+        """
         _, image = self.remove_shadows(image)
         thresholds = skimage.filters.threshold_multiotsu(image, classes=3)
         # print("Thresholds: ", thresholds, len(thresholds), type(thresholds), type(thresholds[0]))
@@ -145,6 +186,9 @@ class creoSegmenter:
         pass
 
     def init_calibration(self, calibration_file, image_size) :
+        """
+        Get the camera matrix and distortion coefficients from the calibration file
+        """
 
         cameraMarix_left = cameraMatrix_right = map_left_y = map_left_x = map_right_y = map_right_x = np.array([])
 
@@ -232,6 +276,9 @@ class creoSegmenter:
         return cameraMatrix_left, cameraMatrix_right, map_left_x, map_left_y, map_right_x, map_right_y
     
     def init_pre_calibrated(self, calibration_file, image_size):
+        """
+        Get the camera matrix and distortion coefficients from the calibration file, but returns less data
+        """
         config = configparser.ConfigParser()
         config.read(calibration_file)
 
@@ -277,6 +324,9 @@ class creoSegmenter:
         return cameraMatrix_left, cameraMatrix_right
 
     def get_camera_matrix(self, image, camera, dewarp):
+        """
+        Get the camera matrix for the left or right camera, dewarping the image if necessary
+        """
         image_size = Resolution()
         image_size.width = 1280
         image_size.height = 720
@@ -301,8 +351,10 @@ class creoSegmenter:
         
         return image, camera_matrix
     
-    # fill the contours in the image
     def fill_contours(self, img):
+        """
+        Fill the contours in the image
+        """
         img = self.dilate_image(img)
         cnts = cv2.findContours(img, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
         cnts = cnts[0] if len(cnts) == 2 else cnts[1]
@@ -312,9 +364,10 @@ class creoSegmenter:
         opening = cv2.morphologyEx(img, cv2.MORPH_OPEN, kernel, iterations=1)
         return opening
 
-    # get location of the top/left most pixel of the creo region and translate to real world coordinates
     def get_creo_locations(self, image, camera, dewarp=True): # no intrinsic matrix because we need coords in camera frame
-
+        """
+        Get the creo locations in the image and translate to real world coordinates
+        """
         image, camera_matrix = self.get_camera_matrix(image, camera, dewarp)
 
         cv2.imshow("Camera Image", image[0:720,400:1000])
@@ -357,6 +410,9 @@ class creoSegmenter:
 
     # get the segmented regions of the image
     def get_segmentations(self, image):
+        """
+        Get the creo, semi, and clean regions of the image
+        """
         image = self.preprocess_image(image)
         if self.segmentation_method == "bw_thresholding":
             return self.bw_thresholding_image(image, visualize=True)
@@ -371,17 +427,22 @@ class creoSegmenter:
             return None
 
 class ImageProcessor(Node):
+    """
+    ROS2 Node for processing images from the camera and segmenting the creosote
+    """
     def __init__(self, camera='left'):
         super().__init__('image_processor')
+        #service to capture an image
         self.image_service = self.create_service(CreosoteImage, '/capture_image', self.capture_image)
+        #publisher for the raw point cloud of the segmented creosote
         self.point_cloud_publisher = self.create_publisher(PointCloud, '/raw_creosote_point_cloud', 10)
+        #service to get the bounds of the creosote in an ROI of the last captured image
         self.segmentation_service = self.create_service(CreosoteSegment, '/creosote_segmentation', self.creosote_segmentation_callback)
-        # self.timer = self.create_timer(0.1, self.publish_point_cloud)
         self.tf_buffer = Buffer()
         self.tf_listener = TransformListener(self.tf_buffer, self)
         
         try:
-            self.cap = cv2.VideoCapture(4)
+            self.cap = cv2.VideoCapture(4)  # 0 for the first camera, 1 for the second, etc.
             if self.cap is None or not self.cap.isOpened():
                 raise ConnectionError
             self.cap.set(cv2.CAP_PROP_FRAME_WIDTH, 2560)
@@ -392,30 +453,38 @@ class ImageProcessor(Node):
             self.get_logger().info('No Camera Found', once=True)
             self.camera_found = False
         
+        #load the calibration file
         calibration_file = os.path.join(get_package_share_directory('koppers_perception'),'calibration/zed_calibration.conf')
+        #initialize the creo segmenter using the calibration file
         self.segmenter = creoSegmenter(calibration_file)
         self.camera = camera
         self.base_scaled_locations = None
 
     def capture_image(self, request, response):
+        """
+        Function to capture an image from the camera and segment the creosote
+        """
         x_min = request.x_min
         x_max = request.x_max
         y_min = request.y_min
         y_max = request.y_max
 
-        if self.camera_found:
+        if self.camera_found: #if the camera is found, capture an image
             retval, frame = self.cap.read()
             camera_locations = self.segmenter.get_creo_locations(frame, camera=self.camera, dewarp=True)
-        else:
+        else: #if the camera is not found, use a pre-captured image
             frame = cv2.imread("testbed_image_1.jpg")
-            camera_locations = self.segmenter.get_creo_locations(frame, camera=self.camera, dewarp=False)
+            camera_locations = self.segmenter.get_creo_locations(frame, camera=self.camera, dewarp=False) #pre-captured image is already dewarped
 
+        #get the transform from the base to the camera
         T = self.tf_buffer.lookup_transform('link_base', self.camera + '_camera', rclpy.time.Time())
+        #convert the transform to a 4x4 matrix
         R = quaternion.as_rotation_matrix(quaternion.as_quat_array(np.array([T.transform.rotation.w,T.transform.rotation.x,T.transform.rotation.y,T.transform.rotation.z])))
         t = np.array([T.transform.translation.x, T.transform.translation.y, T.transform.translation.z]).reshape(3,1)
         T = np.vstack((np.hstack((R,t)),np.array([0,0,0,1]).reshape(1,4)))
         # print(T)
 
+        #project the creosote rays onto a plane at z=0.34 in the camera frame
         camera_scaled_locations = np.zeros((4, camera_locations.shape[1]))
         camera_scaled_locations[0,:] = np.multiply(camera_locations[0,:], (0.34 + t[2]) / camera_locations[2,:])
         camera_scaled_locations[1,:] = np.multiply(camera_locations[1,:], (0.34 + t[2])/ camera_locations[2,:])
@@ -423,7 +492,8 @@ class ImageProcessor(Node):
         camera_scaled_locations[3,:] = np.ones_like(camera_locations[2,:])
 
 
-        self.base_scaled_locations = T @ camera_scaled_locations
+        self.base_scaled_locations = T @ camera_scaled_locations    #transform the points to the base frame
+        #crop the points to the ROI
         locations = np.where(np.logical_and(np.logical_and(np.logical_and(self.base_scaled_locations[0,:] > x_min, self.base_scaled_locations[0,:] < x_max), self.base_scaled_locations[1,:] > y_min), self.base_scaled_locations[1,:] < y_max))
         self.get_logger().info(f'{self.base_scaled_locations.shape}')
         self.base_scaled_locations = self.base_scaled_locations[:,locations].squeeze()
@@ -434,11 +504,14 @@ class ImageProcessor(Node):
         return response
     
     def publish_point_cloud(self):
+        """
+        Publish the raw point cloud of the segmented creosote
+        """
         point_cloud_msg = PointCloud()
         point_cloud_msg.header.stamp = self.get_clock().now().to_msg()
         point_cloud_msg.header.frame_id = 'link_base'
         i = 0
-        for i in range(self.base_scaled_locations.shape[1]):
+        for i in range(self.base_scaled_locations.shape[1]): #format the points into a PointCloud message
             x = self.base_scaled_locations[0,i]
             y = self.base_scaled_locations[1,i]
             z = self.base_scaled_locations[2,i]
@@ -449,19 +522,23 @@ class ImageProcessor(Node):
         self.point_cloud_publisher.publish(point_cloud_msg)
 
     def creosote_segmentation_callback(self, request, response):
-        x_min = request.x_min
+        """
+        Callback function that returns the bounds of the creosote in an ROI
+        """
+        x_min = request.x_min #get the ROI
         x_max = request.x_max
         y_min = request.y_min
         y_max = request.y_max
 
-        if self.base_scaled_locations is not None:
+        if self.base_scaled_locations is not None:  #if an image has been captured and the creosote has been segmented
+            #get all the points in the ROI
             locations = np.where(np.logical_and(np.logical_and(np.logical_and(self.base_scaled_locations[0,:] > x_min, self.base_scaled_locations[0,:] < x_max), self.base_scaled_locations[1,:] > y_min), self.base_scaled_locations[1,:] < y_max))
             # self.get_logger().info(f'{locations}')
-            if len(locations[0]) > 0:
-                response.y_min_result = np.min(self.base_scaled_locations[1,locations])
+            if len(locations[0]) > 0:   #if there are points in the ROI
+                response.y_min_result = np.min(self.base_scaled_locations[1,locations]) #return the bounds of the creosote in the ROI
                 response.y_max_result = np.max(self.base_scaled_locations[1,locations])
-            else:
-                response.y_min_result = y_max
+            else:  #if there are no points in the ROI
+                response.y_min_result = y_max #return y_max to indicate that there are no points in the ROI
                 response.y_max_result = y_max
             return response
         else:
@@ -472,7 +549,7 @@ class ImageProcessor(Node):
 def main(args=None):
     rclpy.init(args=args)
 
-    node = ImageProcessor()
+    node = ImageProcessor() #create the ImageProcessor node
 
     rclpy.spin(node)
 

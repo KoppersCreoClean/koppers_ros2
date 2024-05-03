@@ -1,16 +1,14 @@
-# Copyright 2016 Open Source Robotics Foundation, Inc.
-#
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-#
-#     http://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
+"""
+Team: Carnegie Mellon MRSD Team A: CreoClean
+Members: David Hill, Louis Plottel, Leonardo Mouta, Michael Gromis, Yatharth Ahuja
+
+File: master_clean.launch.py
+Main Author: David Hill
+Date: 2024-01-10
+
+Description: Script for testing the inverse-kinematics function. Must run 'ros2 launch xarm_description
+uf850_rviz_display.launch.py' before running this script for visualization.
+"""
 
 import rclpy
 import time
@@ -27,9 +25,10 @@ class JointStatePublisher(Node):
 
     def __init__(self, test_points):
         super().__init__('kinematics_publisher')
+        #directly publish joint states
         self.publisher_ = self.create_publisher(JointState, '/ufactory/joint_states', 10)
-        timer_period = 0.1 # seconds
-        self.timer = self.create_timer(timer_period, self.timer_callback)
+        timer_period = 0.1
+        self.timer = self.create_timer(timer_period, self.timer_callback)   #publish new joint states every 0.1 seconds
         self.test_points = test_points
         self.i = 0
 
@@ -46,6 +45,9 @@ class JointStatePublisher(Node):
             self.i += 1
     
 def ik_uf850(target_position, rotation):
+    """
+    Inverse kinematics function for the UF850 arm. Takes in a target position and rotation and returns the joint angles.
+    """
     position = target_position
     target_rotation = rotation
 
@@ -61,13 +63,15 @@ def ik_uf850(target_position, rotation):
     q2_offset = -(np.pi/2 + np.arctan(0.426/0.15))
     q2 = -np.arccos((r**2 + position[2]**2 - a1**2 - a2**2)/(2*a1*a2))
     q1 = np.arctan2(position[2],r) - np.arctan2(a2*np.sin(q2),(a1 + a2*np.cos(q2)))
+    #elbow up
     q[1] = q1 + q1_offset
     q[2] = q2_offset - q2
 
     raw_rotation = rotz(q[0]) @ roty(q[2]-q[1]) @ np.diag([1,-1,-1])
 
     R_diff = raw_rotation.T @ target_rotation
-
+    
+    #two options for the wrist rotation
     if(abs(np.arctan2(R_diff[1,2], R_diff[0,2])) > abs(np.arctan2(-R_diff[1,2], -R_diff[0,2]))):
         q[3] = np.arctan2(R_diff[1,2], R_diff[0,2])
         q[4] = np.arctan2(np.sqrt(R_diff[1,2]**2 + R_diff[0,2]**2), R_diff[2,2])
@@ -79,17 +83,6 @@ def ik_uf850(target_position, rotation):
         q[5] = np.arctan2(-R_diff[2,1], R_diff[2,0])
         # print("b")
 
-    # if(abs(np.arctan2(R_diff[2,1], -R_diff[2,0])) < abs(np.arctan2(-R_diff[2,1], R_diff[2,0]))):
-    #     q[3] = np.arctan2(R_diff[1,2], R_diff[0,2])
-    #     q[4] = np.arctan2(np.sqrt(R_diff[1,2]**2 + R_diff[0,2]**2), R_diff[2,2])
-    #     q[5] = np.arctan2(R_diff[2,1], -R_diff[2,0])
-    #     # print("a")
-    # else:
-    #     q[3] = np.arctan2(-R_diff[1,2], -R_diff[0,2])
-    #     q[4] = np.arctan2(-np.sqrt(R_diff[1,2]**2 + R_diff[0,2]**2), R_diff[2,2])
-    #     q[5] = np.arctan2(-R_diff[2,1], R_diff[2,0])
-    #     # print("b")
-
     return q
 
 def main(args=None):
@@ -100,9 +93,9 @@ def main(args=None):
           [np.pi/2.0, 0, 0.15, -np.pi/2.0],
           [0, 0.426, 0, -np.pi/2.0],
           [0, 0, 0, np.pi/2.0],
-          [0, 0.09, 0, 0]]
+          [0, 0.09, 0, 0]]  # DH parameters for the UF850 arm
     
-    arm = SerialArm(dh)
+    arm = SerialArm(dh) # Create a SerialArm object with the DH parameters
 
     test_points = []
     rot = np.diag([1,-1,-1]) #@ np.array([[0.939, 0.343, -0.0344], [-0.342, 0.94, 0.00606], [0.0344, 0.00606, 0.999]])
@@ -115,6 +108,7 @@ def main(args=None):
 
     ts = time.time()
 
+    #make a grid of points to test
     for k in range(z_steps):
         for i in range(x_steps):
             for j in range(y_steps):
@@ -147,7 +141,7 @@ def main(args=None):
     #         test_points.append(list(q))
 
 
-    minimal_publisher = JointStatePublisher(test_points)
+    minimal_publisher = JointStatePublisher(test_points) # Create a JointStatePublisher object with the test points
 
     rclpy.spin(minimal_publisher)
 

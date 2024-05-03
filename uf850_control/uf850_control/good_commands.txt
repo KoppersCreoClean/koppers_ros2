@@ -1,6 +1,0 @@
-end:
-ros2 topic pub --once /clean_area koppers_msgs/msg/RectangularCleanArea "{corner_1: {x: -0.3, y: -0.5, z: -0.335}, corner_2: {x: 0.3, y: -0.5, z: -0.335}, corner_3: {x: 0.3, y: 0, z: -0.345}, corner_4: {x: -0.3, y: 0, z: -0.345}, orientation: {x: 0, y: 0, z: 0.7071068, w: 0.7071068}}"
-end-front:
-ros2 topic pub --once /clean_area koppers_msgs/msg/RectangularCleanArea "{corner_1: {x: 0.6, y: -0.49, z: -0.335}, corner_2: {x: 0.3, y: -0.49, z: -0.335}, corner_3: {x: 0.3, y: 0, z: -0.345}, corner_4: {x: 0.6, y: 0, z: -0.345}, orientation: {x: 0, y: 0, z: 0.7071068, w: 0.7071068}}"
-mid-front:
-ros2 topic pub --once /clean_area koppers_msgs/msg/RectangularCleanArea "{corner_1: {x: 0.6, y: -0.6, z: -0.345}, corner_2: {x: 0.3, y: -0.6, z: -0.345}, corner_3: {x: 0.3, y: 0.6, z: -0.365}, corner_4: {x: 0.6, y: 0.6, z: -0.365}, orientation: {x: 0, y: 0, z: 0.7071068, w: 0.7071068}}"

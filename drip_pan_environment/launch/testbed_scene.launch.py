@@ -1,3 +1,14 @@
+"""
+Team: Carnegie Mellon MRSD Team A: CreoClean
+Members: David Hill, Louis Plottel, Leonardo Mouta, Michael Gromis, Yatharth Ahuja
+
+File: testbed_scene.launch.py
+Main Author: David Hill
+Date: 2024-02-24
+
+Description: ROS2 launch file for running the arm scene interface on the testbed.
+"""
+
 import os
 from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
