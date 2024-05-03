@@ -166,7 +166,6 @@ class MasterNode(Node):
             # self.get_logger().info(cleaning_request)
 
             self.update_point_clouds(self.cleaning_trajs[0,0,0], y_min, self.cleaning_trajs[0,1,1])
-            time.sleep(5)
 
             self.clean_publisher.publish(cleaning_request)
             self.cleaning_trajs = self.cleaning_trajs[1:,:,:]

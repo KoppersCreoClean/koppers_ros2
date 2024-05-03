@@ -329,9 +329,9 @@ class creoSegmenter:
         #get only creosote_locations
         total_creo_region = creo_region
         # total_creo_region = cv2.bitwise_or(creo_region, semi_creo_region)
-        filled_creo_region = self.fill_contours(total_creo_region)
+        # filled_creo_region = self.fill_contours(total_creo_region)
 
-        cv2.imshow("Creosote Segmentation", filled_creo_region[0:720,400:1000])
+        cv2.imshow("Creosote Segmentation", total_creo_region[0:720,400:1000])
         cv2.waitKey(0)
         cv2.destroyAllWindows()
 
@@ -407,7 +407,7 @@ class ImageProcessor(Node):
             retval, frame = self.cap.read()
             camera_locations = self.segmenter.get_creo_locations(frame, camera=self.camera, dewarp=True)
         else:
-            frame = cv2.imread("testbed_image_8.jpg")
+            frame = cv2.imread("testbed_image_1.jpg")
             camera_locations = self.segmenter.get_creo_locations(frame, camera=self.camera, dewarp=False)
 
         T = self.tf_buffer.lookup_transform('link_base', self.camera + '_camera', rclpy.time.Time())
