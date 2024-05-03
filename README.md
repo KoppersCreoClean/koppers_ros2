@@ -70,16 +70,13 @@ This repository is an collection of ROS2 packages containing all of the software
 
 ## 3. Using the Package
 
+There are 5 packages in the repository. Below are brief descriptions and example uses for each of them.
 
-
-
-There are 5 packages in the repository and we will proceed to describe them in detail.
-
-- ### 1.1 koppers_msg
+- ### 3.1 koppers_msg
     This package defines messages and services needed by the rest of the packages. This is the only package that is a C++ package. The rest are python packages.
     
 
-- ### 1.2 koppers_perception
+- ### 3.2 koppers_perception
     This package includes all of the nodes involved in perception, from capturing an image to detecting geometry and creosote. Right now, the camera is not defined using dev_rules. This should be changed eventually.
 
     ```bash
@@ -87,7 +84,7 @@ There are 5 packages in the repository and we will proceed to describe them in d
     $ ros2 launch koppers_perception perception.launch.py
     ```
 
-- ### 1.3 drip_pan_environment
+- ### 3.3 drip_pan_environment
     This package includes the node used for updating the planning scene inside MoveIt based on the position of the linear actuator and mobility platform. It also adds the cleaning tool to the arm and enforces the squeegee does not move outside the area directly above the drip pan. This node relies on the UFactory ROS2 software and MoveIt.
 
     ```bash
@@ -102,7 +99,7 @@ There are 5 packages in the repository and we will proceed to describe them in d
 
     ```
 
-- ### 1.4 uf850_control
+- ### 3.4 uf850_control
     This package includes the node used for interfacing with MoveIt and the UFactory ROS2 package. When running, the node will recieve movement or cleaning commands and execute them using a custom inverse kinematics function, a planner native to MoveIt, and a state machine for breaking up commands into smaller steps.
 
     ```bash
@@ -120,7 +117,7 @@ There are 5 packages in the repository and we will proceed to describe them in d
     ```
 
 
-- ### 1.5 koppers_master
+- ### 3.5 koppers_master
     This package contains the master node. The master node is where decisions are made based on input from other nodes that describe the robot environment state as well as user input. The master node is not exactly a state machine, but it behaves in a similar way.
 
 
@@ -131,5 +128,3 @@ There are 5 packages in the repository and we will proceed to describe them in d
     # launch file to run all the nodes needed for the robot to opperate
     $ ros2 launch koppers_master perception_manipulation.launch.py
     ```
-
-Do not work directly on the main branch. Make a seperate branch for each problem you work on, then use a pull request to bring it into main.
