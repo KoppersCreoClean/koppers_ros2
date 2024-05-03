@@ -1,3 +1,5 @@
+import os
+from glob import glob
 from setuptools import find_packages, setup
 
 package_name = 'drip_pan_environment'
@@ -10,6 +12,9 @@ setup(
         ('share/ament_index/resource_index/packages',
             ['resource/' + package_name]),
         ('share/' + package_name, ['package.xml']),
+        (os.path.join('share', package_name, 'launch'), glob(os.path.join('launch', '*launch.[pxy][yma]*'))),
+        (os.path.join('share', package_name, 'config'), glob('config/*.yaml')),
+        (os.path.join('share', package_name, 'meshes'), glob('meshes/*.STL'))
     ],
     install_requires=['setuptools'],
     zip_safe=True,
@@ -20,7 +25,8 @@ setup(
     tests_require=['pytest'],
     entry_points={
         'console_scripts': [
-            'load_environment = drip_pan_environment.load_environment:main'
+            'load_environment = drip_pan_environment.load_environment:main',
+            'arm_scene_interface = drip_pan_environment.arm_scene_interface:main',
         ],
     },
 )

@@ -1,0 +1,8 @@
+scene_publisher:
+  ros__parameters:
+    cad_namespace: 'testbed'
+    stl_scale: 0.001
+    position_offset: [0.0,0.835,-0.415]
+    orientation_offset: [0.7071068,0.0,0.0,0.7071068]
+    section_widths: [2.0]
+    section_displacements: [0.0]
