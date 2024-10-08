@@ -17,6 +17,8 @@ from rclpy.node import Node
 
 from std_msgs.msg import Float32, Bool
 from std_srvs.srv import Trigger
+from tf2_ros.buffer import Buffer
+from tf2_ros.transform_listener import TransformListener
 from koppers_msgs.msg import CleaningRequest, PoseRequest
 from koppers_msgs.srv import CreosoteSegment, CreosoteImage
 from sensor_msgs.msg import PointCloud, ChannelFloat32
@@ -41,29 +43,63 @@ class MasterNode(Node):
         self.point_cloud_subscriber = self.create_subscription(PointCloud, '/raw_creosote_point_cloud', self.point_cloud_callback, 10)
         self.dirty_point_cloud_publisher = self.create_publisher(PointCloud, '/dirty_creosote_point_cloud', 10)
         self.clean_point_cloud_publisher = self.create_publisher(PointCloud, '/clean_creosote_point_cloud', 10)
+        self.tf_buffer = Buffer()
+        self.tf_listener = TransformListener(self.tf_buffer, self)
 
         self.update_scene()
 
+        # self.cleaning_trajs = np.array([[[-0.125,-0.53,-0.345],[-0.125,-0.39,-0.35]],[[0,-0.53,-0.345],[0,-0.39,-0.35]],[[0.125,-0.53,-0.345],[0.125,-0.39,-0.35]],[[-0.125,-0.39,-0.35],[-0.125,-0.05,-0.36]],[[0,-0.39,-0.35],[0,-0.05,-0.36]],[[0.125,-0.39,-0.35],[0.125,-0.05,-0.36]]])
+        self.cleaning_trajs = np.array([[[0.44,-0.4,-0.365],[0.44,-0.1,-0.37]],[[0.44,-0.12,-0.37],[0.44,0.4,-0.375]]])
+        # arm_z_rotation = -135/180*np.pi
+        # arm_z_T = np.array([[np.cos(arm_z_rotation), -np.sin(arm_z_rotation), 0, 0.0],
+        #               [np.sin(arm_z_rotation), np.cos(arm_z_rotation), 0, 0.0],
+        #               [0, 0, 1, 0.0],
+        #               [0, 0, 0, 1]])
+
+        # for i in range(self.cleaning_trajs.shape[0]):
+        #     R = np.array([[1,0,0],[0,1,0],[0,0,1]])
+        #     t = np.array([self.cleaning_trajs[i,0,0],self.cleaning_trajs[i,0,1],self.cleaning_trajs[i,0,2]])
+        #     T = np.concatenate((np.concatenate((R,t.reshape(3,1)),axis=1),np.array([[0,0,0,1]])),axis=0)
+
+        #     T_transformed = np.matmul(arm_z_T,T)
+
+        #     self.cleaning_trajs[i,0,:] = T_transformed[:3,3]
+
+        #     R = np.array([[1,0,0],[0,1,0],[0,0,1]])
+        #     t = np.array([self.cleaning_trajs[i,1,0],self.cleaning_trajs[i,1,1],self.cleaning_trajs[i,1,2]])
+        #     T = np.concatenate((np.concatenate((R,t.reshape(3,1)),axis=1),np.array([[0,0,0,1]])),axis=0)
+
+        #     T_transformed = np.matmul(arm_z_T,T)
+
+        #     self.cleaning_trajs[i,1,:] = T_transformed[:3,3]
+
         #hardcoded cleaning trajs and modes that are on the surface of the testbed drip pan
-        self.cleaning_trajs = np.array([[[-0.125,-0.53,-0.345],[-0.125,-0.39,-0.35]],[[0,-0.53,-0.345],[0,-0.39,-0.35]],[[0.125,-0.53,-0.345],[0.125,-0.39,-0.35]],[[-0.125,-0.39,-0.35],[-0.125,-0.05,-0.36]],[[0,-0.39,-0.35],[0,-0.05,-0.36]],[[0.125,-0.39,-0.35],[0.125,-0.05,-0.36]]])
-        self.cleaning_modes = np.array([0,0,0,1,1,1]).astype(int)
+        # self.cleaning_trajs = np.array([[[-0.125,-0.53,-0.345],[-0.125,-0.39,-0.35]],[[0,-0.53,-0.345],[0,-0.39,-0.35]],[[0.125,-0.53,-0.345],[0.125,-0.39,-0.35]],[[-0.125,-0.39,-0.35],[-0.125,-0.05,-0.36]],[[0,-0.39,-0.35],[0,-0.05,-0.36]],[[0.125,-0.39,-0.35],[0.125,-0.05,-0.36]]])
+        self.cleaning_modes = np.array([0,1]).astype(int)
         self.squeegee_width = 0.15
-        self.x_min = -0.125 - self.squeegee_width / 2
-        self.x_max = 0.125 + self.squeegee_width / 2
-        self.y_min = -0.53
-        self.y_max = -0.2
+        self.x_min = 0.44 - self.squeegee_width / 2
+        self.x_max = 0.44 + self.squeegee_width / 2
+        self.y_min = -0.4
+        self.y_max = 0.4
         self.complete = False
 
         #point clouds for visualization
         self.dirty_point_cloud = []
         self.clean_point_cloud = []
 
+    def get_arm_z_T(self):
+        T = self.tf_buffer.lookup_transform('world','robot_base', rclpy.time.Time())
+        R = quaternion.as_rotation_matrix(quaternion.as_quat_array(np.array([T.transform.rotation.w,T.transform.rotation.x,T.transform.rotation.y,T.transform.rotation.z])))
+        t = np.array([T.transform.translation.x, T.transform.translation.y, T.transform.translation.z]).reshape(3,1)
+        arm_z_T = np.vstack((np.hstack((R,t)),np.array([0,0,0,1]).reshape(1,4)))
+        return arm_z_T
+
     def publish_point_clouds(self):
         """
         Publishes the dirty and clean point clouds for visualization
         """
         dirty_point_cloud_msg = PointCloud()
-        dirty_point_cloud_msg.header.frame_id = 'link_base' #point cloud is in the base frame
+        dirty_point_cloud_msg.header.frame_id = 'robot_base' #point cloud is in the base frame
         dirty_point_cloud_msg.points = self.dirty_point_cloud
         for i in range(len(self.dirty_point_cloud)):
             dirty_point_cloud_msg.channels.append(ChannelFloat32(name="rgb",values=[0,0,0])) #black
@@ -71,7 +107,7 @@ class MasterNode(Node):
         self.dirty_point_cloud_publisher.publish(dirty_point_cloud_msg)
 
         clean_point_cloud_msg = PointCloud()
-        clean_point_cloud_msg.header.frame_id = 'link_base' #point cloud is in the base frame
+        clean_point_cloud_msg.header.frame_id = 'robot_base' #point cloud is in the base frame
         clean_point_cloud_msg.points = self.clean_point_cloud
         for i in range(len(self.clean_point_cloud)):
             clean_point_cloud_msg.channels.append(ChannelFloat32(name="rgb",values=[255,255,255])) #white
@@ -116,8 +152,8 @@ class MasterNode(Node):
         Moves the linear actuator and cart to the desired position and updates the scene
         """
         #move linear actuator and cart to desired position
-        self.linear_actuator_publisher.publish(Float32(data=0.55))
-        self.cart_publisher.publish(Float32(data=1.28))
+        self.linear_actuator_publisher.publish(Float32(data=-0.33)) #0.55
+        self.cart_publisher.publish(Float32(data=1.0)) #1.28
 
         self.service_complete = False
         self.future = self.scene_client.call_async(Trigger.Request())
@@ -130,14 +166,24 @@ class MasterNode(Node):
         Defines a desired pose of the camera and requests the arm to move to that pose
         """
         #move are to image capture position
+
+        arm_z_T = self.get_arm_z_T()
+
+        R = np.array([[0,1,0],[1,0,0],[0,0,-1]])
+        t = np.array([(self.x_min + self.x_max)/2, (self.y_min + self.y_max)/2, 0.18])
+        T = np.concatenate((np.concatenate((R,t.reshape(3,1)),axis=1),np.array([[0,0,0,1]])),axis=0)
+
+        T_transformed = np.matmul(arm_z_T,T)
+        q_transformed = quaternion.from_rotation_matrix(T_transformed[:3,:3])
+
         pose_request = PoseRequest()
-        pose_request.pose.position.x = 0.0
-        pose_request.pose.position.y = -0.34
-        pose_request.pose.position.z = 0.18
-        pose_request.pose.orientation.x = 0.7071068
-        pose_request.pose.orientation.y = 0.7071068
-        pose_request.pose.orientation.z = 0.0
-        pose_request.pose.orientation.w = 0.0
+        pose_request.pose.position.x = T_transformed[0,3]
+        pose_request.pose.position.y = T_transformed[1,3]
+        pose_request.pose.position.z = T_transformed[2,3]
+        pose_request.pose.orientation.x = q_transformed.x
+        pose_request.pose.orientation.y = q_transformed.y
+        pose_request.pose.orientation.z = q_transformed.z
+        pose_request.pose.orientation.w = q_transformed.w
         pose_request.reference_frame = "left_camera"    #define the reference frame for the pose as the left camera
         self.pose_publisher.publish(pose_request) #publish the pose request
 
@@ -190,16 +236,30 @@ class MasterNode(Node):
             k = (self.cleaning_trajs[0,1,1] - y_min) / (self.cleaning_trajs[0,1,1] - self.cleaning_trajs[0,0,1])
             cleaning_request = CleaningRequest()
             #define the cleaning start and end positions and orientation
-            cleaning_request.start_position.x = self.cleaning_trajs[0,0,0]
-            cleaning_request.start_position.y = y_min
-            cleaning_request.start_position.z = k * self.cleaning_trajs[0,0,2] + (1 - k) * self.cleaning_trajs[0,1,2]
-            cleaning_request.end_position.x = self.cleaning_trajs[0,1,0]
-            cleaning_request.end_position.y = self.cleaning_trajs[0,1,1]
-            cleaning_request.end_position.z = self.cleaning_trajs[0,1,2]
-            cleaning_request.orientation.x = -0.0061706
-            cleaning_request.orientation.y = 0.0061706
-            cleaning_request.orientation.z = 0.7070799
-            cleaning_request.orientation.w = 0.7070799
+
+            arm_z_T = self.get_arm_z_T()
+
+            R = np.array([[0.0, -1.0, 0.0],[0.9998477,0.0, 0.0174524],[-0.0174524, 0.0, 0.9998477]])
+            t_start = np.array([self.cleaning_trajs[0,0,0], y_min, k * self.cleaning_trajs[0,0,2] + (1 - k) * self.cleaning_trajs[0,1,2]])
+            t_end = np.array([self.cleaning_trajs[0,1,0], self.cleaning_trajs[0,1,1], self.cleaning_trajs[0,1,2]])
+
+            T_start = np.concatenate((np.concatenate((R,t_start.reshape(3,1)),axis=1),np.array([[0,0,0,1]])),axis=0)
+            T_end = np.concatenate((np.concatenate((R,t_end.reshape(3,1)),axis=1),np.array([[0,0,0,1]])),axis=0)
+                
+            T_start_transformed = np.matmul(arm_z_T,T_start)
+            T_end_transformed = np.matmul(arm_z_T,T_end)
+            q_transformed = quaternion.from_rotation_matrix(T_start_transformed[:3,:3])
+
+            cleaning_request.start_position.x = T_start_transformed[0,3]
+            cleaning_request.start_position.y = T_start_transformed[1,3]
+            cleaning_request.start_position.z = T_start_transformed[2,3]
+            cleaning_request.end_position.x = T_end_transformed[0,3]
+            cleaning_request.end_position.y = T_end_transformed[1,3]
+            cleaning_request.end_position.z = T_end_transformed[2,3]
+            cleaning_request.orientation.x = q_transformed.x
+            cleaning_request.orientation.y = q_transformed.y
+            cleaning_request.orientation.z = q_transformed.z
+            cleaning_request.orientation.w = q_transformed.w
             cleaning_request.mode = int(self.cleaning_modes[0]) #define the cleaning mode
 
             # self.get_logger().info(cleaning_request)

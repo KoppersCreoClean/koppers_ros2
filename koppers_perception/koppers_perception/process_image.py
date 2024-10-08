@@ -480,7 +480,7 @@ class ImageProcessor(Node):
             camera_locations = self.segmenter.get_creo_locations(frame, camera=self.camera, dewarp=False) #pre-captured image is already dewarped
 
         #get the transform from the base to the camera
-        T = self.tf_buffer.lookup_transform('link_base', self.camera + '_camera', rclpy.time.Time())
+        T = self.tf_buffer.lookup_transform('robot_base', self.camera + '_camera', rclpy.time.Time())
         #convert the transform to a 4x4 matrix
         R = quaternion.as_rotation_matrix(quaternion.as_quat_array(np.array([T.transform.rotation.w,T.transform.rotation.x,T.transform.rotation.y,T.transform.rotation.z])))
         t = np.array([T.transform.translation.x, T.transform.translation.y, T.transform.translation.z]).reshape(3,1)
@@ -515,7 +515,7 @@ class ImageProcessor(Node):
 
         point_cloud_msg = PointCloud()
         point_cloud_msg.header.stamp = self.get_clock().now().to_msg()
-        point_cloud_msg.header.frame_id = 'link_base'
+        point_cloud_msg.header.frame_id = 'robot_base'
         i = 0
         for i in range(self.base_scaled_locations.shape[1]): #format the points into a PointCloud message
             x = self.base_scaled_locations[0,i]
