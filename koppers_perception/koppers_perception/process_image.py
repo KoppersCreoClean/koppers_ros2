@@ -370,7 +370,7 @@ class creoSegmenter:
         """
         image, camera_matrix = self.get_camera_matrix(image, camera, dewarp)
 
-        cv2.imshow("Camera Image", image[0:720,400:1000])
+        # cv2.imshow("Camera Image", image[0:720,400:1000])
         # cv2.imwrite("testbed_image_7.jpg", image)
         # cv2.waitKey(0)
 
@@ -384,7 +384,8 @@ class creoSegmenter:
         # total_creo_region = cv2.bitwise_or(creo_region, semi_creo_region)
         # filled_creo_region = self.fill_contours(total_creo_region)
 
-        cv2.imshow("Creosote Segmentation", total_creo_region[0:720,400:1000])
+
+        # cv2.imshow("Creosote Segmentation", total_creo_region[0:720,400:1000])
         cv2.waitKey(0)
         cv2.destroyAllWindows()
 
@@ -442,7 +443,7 @@ class ImageProcessor(Node):
         self.tf_listener = TransformListener(self.tf_buffer, self)
         
         try:
-            self.cap = cv2.VideoCapture(4)  # 0 for the first camera, 1 for the second, etc.
+            self.cap = cv2.VideoCapture(0)  # 0 for the first camera, 1 for the second, etc.
             if self.cap is None or not self.cap.isOpened():
                 raise ConnectionError
             self.cap.set(cv2.CAP_PROP_FRAME_WIDTH, 2560)
@@ -468,6 +469,8 @@ class ImageProcessor(Node):
         x_max = request.x_max
         y_min = request.y_min
         y_max = request.y_max
+
+        self.get_logger().info('getting image')
 
         if self.camera_found: #if the camera is found, capture an image
             retval, frame = self.cap.read()
@@ -508,6 +511,9 @@ class ImageProcessor(Node):
         """
         Publish the raw point cloud of the segmented creosote
         """
+
+        self.get_logger().info('publishing point cloud')
+
         point_cloud_msg = PointCloud()
         point_cloud_msg.header.stamp = self.get_clock().now().to_msg()
         point_cloud_msg.header.frame_id = 'robot_base'
@@ -530,6 +536,8 @@ class ImageProcessor(Node):
         x_max = request.x_max
         y_min = request.y_min
         y_max = request.y_max
+
+        self.get_logger().info('segmenting creosote')
 
         if self.base_scaled_locations is not None:  #if an image has been captured and the creosote has been segmented
             #get all the points in the ROI
