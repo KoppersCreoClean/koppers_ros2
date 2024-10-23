@@ -473,7 +473,8 @@ class ImageProcessor(Node):
             retval, frame = self.cap.read()
             camera_locations = self.segmenter.get_creo_locations(frame, camera=self.camera, dewarp=True)
         else: #if the camera is not found, use a pre-captured image
-            frame = cv2.imread("testbed_image_1.jpg")
+            test_image_file = os.path.join(get_package_share_directory('koppers_perception'),'test_images/testbed_image_1.jpg')
+            frame = cv2.imread(test_image_file)
             camera_locations = self.segmenter.get_creo_locations(frame, camera=self.camera, dewarp=False) #pre-captured image is already dewarped
 
         #get the transform from the base to the camera
