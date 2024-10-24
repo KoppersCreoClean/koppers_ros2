@@ -6,7 +6,7 @@ import serial
 def main(args=None):
     rclpy.init(args=args)
     node = rclpy.create_node('serial_publisher')
-    publisher = node.create_publisher(String, 'serial_data', 10)
+    publisher = node.create_publisher(String, 'sensor_data', 100)
     # serial_port = serial.Serial('/dev/ttyUSB0', 9600, timeout=1)
 
     def timer_callback():
@@ -16,8 +16,6 @@ def main(args=None):
         msg.data = "hw"#serial_data
         publisher.publish(msg)
         node.get_logger().info(f'Publishing: {msg.data}')
-
-    timer = node.create_timer(0.1, timer_callback)
 
     try:
         rclpy.spin(node)
