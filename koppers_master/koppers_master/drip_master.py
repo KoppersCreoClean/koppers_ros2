@@ -10,6 +10,8 @@ class DripBot:
 
     def __init__(self):
 
+        # launch the UI, sensors: voltage check, ToFs, Arm, camera
+
         self.location = 0 #m along the pan
         self.current_section = 0 # 0, 1, 2, 3 ...
         self.current_portion = 0 # 0, 1, 2, 3
